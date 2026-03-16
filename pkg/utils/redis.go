@@ -9,16 +9,15 @@ import (
 )
 
 var (
-	RDB      *redis.Client
-	Ctx      = context.Background()
-	redisCfg = config.GlobalConfig.Redis
+	RDB *redis.Client
+	Ctx = context.Background()
 )
 
 func InitRedis() {
 	RDB = redis.NewClient(&redis.Options{
-		Addr:     redisCfg.Addr,
-		Password: redisCfg.Password,
-		DB:       redisCfg.DB,
+		Addr:     config.GlobalConfig.Redis.Addr,
+		Password: config.GlobalConfig.Redis.Password,
+		DB:       config.GlobalConfig.Redis.DB,
 	})
 
 	if err := RDB.Ping(Ctx).Err(); err != nil {

@@ -4,8 +4,10 @@ import (
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/pkg/utils"
+	"errors"
 	"strconv"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -23,8 +25,10 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 func (r *userRepository) FindInviterAndAddPoints(inviteCode string) (int64, error) {
-	inviterIDStr, err := utils.RDB.Get(utils.Ctx, constant.InviteCodePrefix+inviteCode).Result()
-	if err != nil {
+	inviterIDStr, err := utils.RDB.GetDel(utils.Ctx, constant.InviteCodePrefix+inviteCode).Result()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	} else if err != nil {
 		return 0, err
 	}
 

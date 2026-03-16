@@ -12,8 +12,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtCfg = config.GlobalConfig.JWT
-
 const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 type CustomClaims struct {
@@ -24,14 +22,14 @@ type CustomClaims struct {
 }
 
 func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
-	secret := []byte(jwtCfg.Secret)
+	secret := []byte(config.GlobalConfig.JWT.Secret)
 
 	accessClaims := CustomClaims{
 		UserID:   userID,
 		UserRole: userRole,
 		Type:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(jwtCfg.AccessExpiration) * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GlobalConfig.JWT.AccessExpiration) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -46,7 +44,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 		UserRole: userRole,
 		Type:     "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(jwtCfg.RefreshExpiration) * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GlobalConfig.JWT.RefreshExpiration) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -61,7 +59,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 
 func ParseToken(tokenStr string) (*CustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(jwtCfg.Secret), nil
+		return []byte(config.GlobalConfig.JWT.Secret), nil
 	})
 	if err != nil {
 		log.Printf("解析令牌失败：%v", err)

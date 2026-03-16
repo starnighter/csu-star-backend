@@ -24,7 +24,7 @@ func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthS
 func (s *AuthService) SendCaptcha(email string) error {
 	// 检查是否在60s内重复调用
 	stuNumber := GetStuNumberByEmail(email)
-	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaPrefix + stuNumber).Result()
+	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaPrefix+stuNumber).Result()
 	if err != nil {
 		return err
 	}
@@ -44,21 +44,21 @@ func (s *AuthService) SendCaptcha(email string) error {
 		return err
 	}
 	// 存入redis防止60s内重复访问并供后续校验
-	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix + stuNumber, captcha, 60 * time.Second).Err(); err != nil {
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 60*time.Second).Err(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *AuthService) Register(email, password, displayName, inviteCode string) error {
+func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode string) error {
 	hashPassword, err := utils.HashPassword(password)
 	if err != nil {
 		return err
 	}
 
-	if displayName == "" {
-		displayName = utils.GenerateNickname()
+	if nickName == "" {
+		nickName = utils.GenerateNickname()
 	}
 
 	var inviterID int64
@@ -73,7 +73,8 @@ func (s *AuthService) Register(email, password, displayName, inviteCode string) 
 	user := &model.Users{
 		Email:         email,
 		Password:      hashPassword,
-		Nickname:      displayName,
+		Nickname:      nickName,
+		AvatarUrl:     avatarUrl,
 		EmailVerified: true,
 		Metadata:      nil,
 		InviterID:     inviterID,
