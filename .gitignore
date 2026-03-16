@@ -14,6 +14,7 @@ Desktop.ini
 *~
 *.bak
 
+logs/
 *.log
 tmp/
 temp/

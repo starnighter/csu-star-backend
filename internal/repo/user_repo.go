@@ -27,7 +27,7 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 func (r *userRepository) FindInviterAndAddPoints(inviteCode string) (int64, error) {
 	inviterIDStr, err := utils.RDB.GetDel(utils.Ctx, constant.InviteCodePrefix+inviteCode).Result()
 	if errors.Is(err, redis.Nil) {
-		return 0, nil
+		return 0, &constant.InviteCodeNotExistErr
 	} else if err != nil {
 		return 0, err
 	}

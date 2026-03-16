@@ -5,11 +5,12 @@ import (
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
+	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"
-	"errors"
-	"log"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type AuthService struct {
@@ -29,8 +30,8 @@ func (s *AuthService) SendCaptcha(email string) error {
 		return err
 	}
 	if result != "" {
-		// TODO 编写自定义错误
-		return errors.New("60s内重复发送验证码")
+		err = &constant.SendCaptchaRepeatedlyIn60sErr
+		return err
 	}
 
 	// 调用腾讯云SES SDK发送验证码到指定邮箱
@@ -63,7 +64,6 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 
 	var inviterID int64
 	if inviteCode != "" {
-		// TODO 添加重复使用 inviterID 校验
 		inviterID, err = s.UserRepo.FindInviterAndAddPoints(inviteCode)
 		if err != nil {
 			return err
@@ -81,7 +81,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 	}
 
 	if err := s.UserRepo.CreateUser(user); err != nil {
-		log.Fatal("使用邮箱创建新用户失败")
+		logger.Log.Error("使用邮箱创建新用户失败：", zap.Error(err))
 		return err
 	}
 
@@ -92,7 +92,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 	}
 	err = s.InvitationRepo.UpdateInvitationByCode(invitation, inviteCode)
 	if err != nil {
-		log.Fatal("使用邀请码创建新用户后，更新邀请失败")
+		logger.Log.Error("使用邀请码创建新用户后，更新邀请信息失败：", zap.Error(err))
 		return err
 	}
 

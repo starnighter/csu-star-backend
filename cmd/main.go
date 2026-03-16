@@ -3,23 +3,27 @@ package main
 import (
 	"context"
 	"csu-star-backend/config"
+	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"
 	"csu-star-backend/router"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func main() {
-	// 初始化配置
+	// 初始化日志配置
+	logger.Init()
+
+	// 初始化配置文件
 	config.Init()
 	globalCfg := config.GlobalConfig
 
@@ -30,14 +34,14 @@ func main() {
 	// 初始化数据库配置
 	db, err := gorm.Open(postgres.Open(globalCfg.Database.DSN), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("数据库连接失败：%v\n", err)
+		logger.Log.Error("数据库连接失败：", zap.Error(err))
 	}
 
 	// 初始化路由及依赖配置
 	r := router.SetUpRouter(db)
 
 	// 配置HTTP Sever
-	addr := fmt.Sprintf("CSU-star后端服务正在启动，监听端口：%d\n", globalCfg.Server.Port)
+	addr := fmt.Sprintf("0.0.0.0:%v", globalCfg.Server.Port)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: r,
@@ -45,9 +49,9 @@ func main() {
 
 	// 启动服务
 	go func() {
-		log.Printf("CSU-Star后端服务启动成功，监听端口：%s", addr)
+		logger.Log.Info("CSU-Star后端服务启动成功，监听端口：" + addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("监听出现错误：%s\n", err)
+			logger.Log.Error("监听出现错误：", zap.Error(err))
 		}
 	}()
 
@@ -57,12 +61,12 @@ func main() {
 
 	// 阻塞等待信号
 	<-quit
-	log.Println("正在关闭服务...")
+	logger.Log.Info("正在关闭服务......")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("关闭超时，服务强制关闭:", err)
+		logger.Log.Error("关闭超时，服务强制关闭：", zap.Error(err))
 	}
 
-	log.Println("服务监听中......")
+	logger.Log.Info("服务关闭成功")
 }

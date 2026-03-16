@@ -1,9 +1,10 @@
 package config
 
 import (
-	"log"
+	"csu-star-backend/logger"
 
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 var GlobalConfig *Config
@@ -77,17 +78,17 @@ func Init() {
 	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("读取配置文件失败：%v", err)
+		logger.Log.Error("读取配置文件失败：", zap.Error(err))
 	}
 	viper.SetConfigName("config-secret")
 	if err := viper.MergeInConfig(); err != nil {
-		log.Fatalf("合并配置文件失败：%v", err)
+		logger.Log.Error("合并配置文件失败：", zap.Error(err))
 	}
 
 	GlobalConfig = &Config{}
 	if err := viper.Unmarshal(GlobalConfig); err != nil {
-		log.Fatalf("解析配置文件失败：%v", err)
+		logger.Log.Error("解析配置文件失败：", zap.Error(err))
 	}
 
-	log.Println("配置加载成功")
+	logger.Log.Info("配置文件加载成功")
 }
