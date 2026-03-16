@@ -1,0 +1,37 @@
+app:
+  name: "CSU-Star"
+  version: "1.0.0"
+
+server:
+  port: 8080
+
+database:
+  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+
+redis:
+  addr: "localhost:6379"
+  password: "your_redis_password"
+  db: 0
+
+jwt:
+  secret: "your_jwt_secret_key"
+  access_expiration: 3600
+  refresh_expiration: 604800
+
+snowflake:
+  nodeID: 1
+
+tencent:
+  secret_id: "your_tencent_cloud_secret_id"
+  secret_key: "your_tencent_cloud_secret_key"
+  from_email_addr: "your_from_email_addr"
+  subject: "your_send_email_subject"
+  template_id: 0
+
+oauth:
+  qq:
+    app_id: "your_qq_app_id"
+    app_key: "your_qq_app_key"
+  wechat:
+    app_id: "your_wechat_app_id"
+    app_secret: "your_wechat_app_secret"
