@@ -130,7 +130,7 @@ func (r *userRepository) FindOrCreateOauthUser(provider model.OauthProvider, use
 			BoundAt:  time.Now(),
 		}
 		if provider == model.OauthProviderWechat {
-			userOauthBinding.UnionID = userInfo.OpenId
+			userOauthBinding.UnionID = userInfo.UnionId
 		}
 		return tx.Create(&userOauthBinding).Error
 	})

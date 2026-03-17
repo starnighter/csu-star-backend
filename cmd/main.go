@@ -40,6 +40,16 @@ func main() {
 	// 初始化OAuth Client
 	oauthClient := utils.NewHttpClient(10*time.Second, 100)
 
+	// 初始化腾讯云相关组件
+	err = utils.InitTencentCos()
+	if err != nil {
+		logger.Log.Error("腾讯云COS客户端初始化失败：", zap.Error(err))
+	}
+	err = utils.InitTencentSes()
+	if err != nil {
+		logger.Log.Error("腾讯云SES客户端初始化失败：", zap.Error(err))
+	}
+
 	// 初始化路由及依赖配置
 	r := router.SetUpRouter(db, oauthClient)
 

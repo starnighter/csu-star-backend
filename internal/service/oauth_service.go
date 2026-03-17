@@ -50,7 +50,10 @@ func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code 
 }
 
 func (s *OauthService) handleQQ(code string) (model.UserInfo, error) {
+	// TODO 完成QQ登录
+	var userInfo model.UserInfo
 
+	return userInfo, nil
 }
 
 func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
@@ -95,17 +98,35 @@ func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
 		return userInfo, err
 	}
 
-	// TODO 补充将获取到的头像上传到腾讯云COS，拿到的URL应该是自己存的
+	avatarResp, err := s.httpClient.Get(wechatUserResp.HeadImgUrl)
+	if err != nil {
+		return userInfo, err
+	}
+	defer avatarResp.Body.Close()
+
+	if avatarResp.StatusCode != http.StatusOK {
+		return userInfo, &constant.DownloadAvatarFromProviderFailedErr
+	}
+
+	// 上传获取到的微信用户头像 URL 到 COS，并获取保存后的 COS 永久下载链接
+	avatarUrl, err := utils.TencentCosUploadByStream(avatarResp.Body, constant.TencentCosAvatarsKeyPrefix, ".jpg")
+
 	userInfo.Nickname = wechatUserResp.Nickname
-	userInfo.AvatarUrl = wechatUserResp.HeadImgUrl
+	userInfo.AvatarUrl = avatarUrl
 
 	return userInfo, nil
 }
 
 func (s *OauthService) handleGithub(code string) (model.UserInfo, error) {
+	// TODO 完成Github登录
+	var userInfo model.UserInfo
 
+	return userInfo, nil
 }
 
 func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
+	// TODO 完成Google登录
+	var userInfo model.UserInfo
 
+	return userInfo, nil
 }

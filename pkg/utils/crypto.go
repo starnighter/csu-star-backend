@@ -2,10 +2,15 @@ package utils
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"csu-star-backend/config"
+	"encoding/hex"
 	"errors"
+	"io"
 	"log"
 	"math/big"
+	"mime/multipart"
+	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,6 +26,7 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
+// GenerateTokenPair 生成 accessToken 以及 refreshToken
 func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 	secret := []byte(config.GlobalConfig.JWT.Secret)
 
@@ -57,6 +63,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
+// ParseToken 解析 JWT Token
 func ParseToken(tokenStr string) (*CustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.GlobalConfig.JWT.Secret), nil
@@ -72,11 +79,13 @@ func ParseToken(tokenStr string) (*CustomClaims, error) {
 	return nil, errors.New("无效的令牌")
 }
 
+// HashPassword 生成密码加密后的 Hash 值
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
 }
 
+// CheckPasswordHash 校验密码和 Hash 值
 func CheckPasswordHash(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
@@ -96,28 +105,30 @@ func base62Encode(n int64) string {
 	return string(result)
 }
 
-func GenerateNickname() string {
+// GenerateNickname 生成随机唯一用户昵称
+func GenerateNickname() (string, error) {
 	csuPrefix := "csu_"
 	timestamp := time.Now().UnixMilli()
 	timePrefix := base62Encode(timestamp)
 
 	remainLen := 16 - len(timePrefix)
 	if remainLen <= 0 {
-		return csuPrefix + timePrefix[:16]
+		return csuPrefix + timePrefix[:16], nil
 	}
 
 	randomSuffix := make([]byte, remainLen)
 	for i := range randomSuffix {
 		n, err := rand.Int(rand.Reader, big.NewInt(62))
 		if err != nil {
-			panic(err)
+			return "", err
 		}
 		randomSuffix[i] = charset[n.Int64()]
 	}
 
-	return csuPrefix + timePrefix + string(randomSuffix)
+	return csuPrefix + timePrefix + string(randomSuffix), nil
 }
 
+// GenerateCaptcha 生成指定长度的验证码
 func GenerateCaptcha(length int) (string, error) {
 	digits := "0123456789"
 	captcha := make([]byte, length)
@@ -129,4 +140,29 @@ func GenerateCaptcha(length int) (string, error) {
 		captcha[i] = digits[num.Int64()]
 	}
 	return string(captcha), nil
+}
+
+// CalculateFileHash 计算文件的 SHA256 哈希值
+func CalculateFileHash(f multipart.File) (string, error) {
+	// 无论读取是否成功，函数退出时自动文件指针复位
+	defer f.Seek(0, io.SeekStart)
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// DetectMimeType 探测文件的真实 MIME 类型
+func DetectMimeType(f multipart.File) (string, error) {
+	defer f.Seek(0, io.SeekStart)
+
+	buffer := make([]byte, 512)
+	n, err := f.Read(buffer)
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	// buffer[:n] 防止文件小于 512 字节时读取到空数据
+	return http.DetectContentType(buffer[:n]), nil
 }

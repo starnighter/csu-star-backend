@@ -74,7 +74,10 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 	}
 
 	if nickName == "" {
-		nickName = utils.GenerateNickname()
+		nickName, err = utils.GenerateNickname()
+		if err != nil {
+			return err
+		}
 	}
 
 	var inviterID int64
