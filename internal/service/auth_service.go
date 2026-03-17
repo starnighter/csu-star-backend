@@ -16,12 +16,12 @@ import (
 )
 
 type AuthService struct {
-	UserRepo       repo.UserRepository
-	InvitationRepo repo.InvitationRepository
+	userRepo       repo.UserRepository
+	invitationRepo repo.InvitationRepository
 }
 
 func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthService {
-	return &AuthService{UserRepo: ur, InvitationRepo: ir}
+	return &AuthService{userRepo: ur, invitationRepo: ir}
 }
 
 func (s *AuthService) SendCaptcha(email string) error {
@@ -79,7 +79,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 
 	var inviterID int64
 	if inviteCode != "" {
-		inviterID, err = s.UserRepo.FindInviterAndAddPoints(inviteCode)
+		inviterID, err = s.userRepo.FindInviterAndAddPoints(inviteCode)
 		if err != nil {
 			return err
 		}
@@ -91,11 +91,10 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 		Nickname:      nickName,
 		AvatarUrl:     avatarUrl,
 		EmailVerified: true,
-		Metadata:      nil,
 		InviterID:     inviterID,
 	}
 
-	if err := s.UserRepo.CreateUser(user); err != nil {
+	if err := s.userRepo.CreateUser(user); err != nil {
 		logger.Log.Error("使用邮箱创建新用户失败：", zap.Error(err))
 		return err
 	}
@@ -105,7 +104,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 		Status:    model.InvitationStatusInvited,
 		UsedAt:    time.Now(),
 	}
-	err = s.InvitationRepo.UpdateInvitationByCode(invitation, inviteCode)
+	err = s.invitationRepo.UpdateInvitationByCode(invitation, inviteCode)
 	if err != nil {
 		logger.Log.Error("使用邀请码创建新用户后，更新邀请信息失败：", zap.Error(err))
 		return err
@@ -115,7 +114,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 }
 
 func (s *AuthService) Login(email, password string) (string, string, error) {
-	user, err := s.UserRepo.FindUserByEmail(email)
+	user, err := s.userRepo.FindUserByEmail(email)
 	if err != nil || user == nil {
 		return "", "", err
 	}
@@ -127,7 +126,7 @@ func (s *AuthService) Login(email, password string) (string, string, error) {
 }
 
 func (s *AuthService) BindEmail(userID int64, email string) error {
-	user, err := s.UserRepo.FindUserByID(userID)
+	user, err := s.userRepo.FindUserByID(userID)
 	if err != nil {
 		return err
 	}
@@ -138,8 +137,7 @@ func (s *AuthService) BindEmail(userID int64, email string) error {
 		return &constant.EmailIsExistErr
 	}
 
-	user.Email = email
-	err = s.UserRepo.UpdateEmailByID(userID, email)
+	err = s.userRepo.UpdateEmailByID(userID, email)
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return &constant.EmailHasBeenBoundErr
 	}

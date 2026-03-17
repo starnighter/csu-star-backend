@@ -37,8 +37,11 @@ func main() {
 		logger.Log.Error("数据库连接失败：", zap.Error(err))
 	}
 
+	// 初始化OAuth Client
+	oauthClient := utils.NewHttpClient(10*time.Second, 100)
+
 	// 初始化路由及依赖配置
-	r := router.SetUpRouter(db)
+	r := router.SetUpRouter(db, oauthClient)
 
 	// 配置HTTP Sever
 	addr := fmt.Sprintf("0.0.0.0:%v", globalCfg.Server.Port)

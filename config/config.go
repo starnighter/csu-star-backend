@@ -50,11 +50,22 @@ type SnowflakeConfig struct {
 }
 
 type TencentConfig struct {
-	SecretID      string `mapstructure:"secret_id"`
-	SecretKey     string `mapstructure:"secret_key"`
+	SecretID  string `mapstructure:"secret_id"`
+	SecretKey string `mapstructure:"secret_key"`
+	Ses       string `mapstructure:"ses"`
+	Cos       string `mapstructure:"cos"`
+}
+
+type SesConfig struct {
 	FromEmailAddr string `mapstructure:"from_email_addr"`
 	Subject       string `mapstructure:"subject"`
 	TemplateID    uint64 `mapstructure:"template_id"`
+}
+
+type CosConfig struct {
+	AppID  string `mapstructure:"app_id"`
+	Bucket string `mapstructure:"bucket"`
+	Region string `mapstructure:"region"`
 }
 
 type OauthConfig struct {

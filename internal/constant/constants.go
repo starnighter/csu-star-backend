@@ -21,4 +21,5 @@ var (
 	UserNotExistErr               = errs.BusinessErr{Code: 1005, Msg: "用户不存在，请先注册呐"}
 	EmailIsExistErr               = errs.BusinessErr{Code: 1006, Msg: "您已绑定过邮箱，请勿重复绑定哦"}
 	EmailHasBeenBoundErr          = errs.BusinessErr{Code: 1007, Msg: "该邮箱已被绑定，换一个试试吧～"}
+	ProviderNotSupportErr         = errs.BusinessErr{Code: 1008, Msg: "不支持的提供商，也许以后会支持的吧（可能"}
 )

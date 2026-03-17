@@ -26,6 +26,8 @@ const (
 
 	OauthProviderQQ     OauthProvider = "qq"
 	OauthProviderWechat OauthProvider = "wechat"
+	OauthProviderGithub OauthProvider = "github"
+	OauthProviderGoogle OauthProvider = "google"
 )
 
 func (r UserRole) Value() (driver.Value, error) {
@@ -114,6 +116,13 @@ type UserOauthBinding struct {
 	Metadata  datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	CreatedAt time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"type:autoUpdateTime" json:"updated_at"`
+}
+
+type UserInfo struct {
+	Nickname  string `json:"nickname"`
+	AvatarUrl string `json:"avatar_url"`
+	OpenId    string `json:"open_id"`
+	UnionId   string `json:"union_id"`
 }
 
 func (u *Users) BeforeCreate(tx *gorm.DB) error {

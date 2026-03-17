@@ -24,9 +24,14 @@ snowflake:
 tencent:
   secret_id: "your_tencent_cloud_secret_id"
   secret_key: "your_tencent_cloud_secret_key"
-  from_email_addr: "your_from_email_addr"
-  subject: "your_send_email_subject"
-  template_id: 0
+  ses:
+    from_email_addr: "your_from_email_addr"
+    subject: "your_send_email_subject"
+    template_id: 0
+  cos:
+    app_id: "your_app_id"
+    bucket: "your_bucket"
+    region: "your_cos_region"
 
 oauth:
   qq:
