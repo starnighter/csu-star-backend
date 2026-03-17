@@ -25,12 +25,12 @@ func TencentSesSendEmail(from string, to []string, captcha string) error {
 
 	req := ses.NewSendEmailRequest()
 	req.FromEmailAddress = common.StringPtr(from)
-	req.Subject = common.StringPtr(config.GlobalConfig.Tencent.Subject)
+	req.Subject = common.StringPtr(config.GlobalConfig.Tencent.Ses.Subject)
 	req.Destination = common.StringPtrs(to)
 	req.TriggerType = common.Uint64Ptr(1)
 	captchaJson := common.StringPtr("{\"captcha\":\"" + captcha + "\"}")
 	req.Template = &ses.Template{
-		TemplateID:   common.Uint64Ptr(config.GlobalConfig.Tencent.TemplateID),
+		TemplateID:   common.Uint64Ptr(config.GlobalConfig.Tencent.Ses.TemplateID),
 		TemplateData: captchaJson,
 	}
 

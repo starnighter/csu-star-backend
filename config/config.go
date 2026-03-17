@@ -50,10 +50,10 @@ type SnowflakeConfig struct {
 }
 
 type TencentConfig struct {
-	SecretID  string `mapstructure:"secret_id"`
-	SecretKey string `mapstructure:"secret_key"`
-	Ses       string `mapstructure:"ses"`
-	Cos       string `mapstructure:"cos"`
+	SecretID  string    `mapstructure:"secret_id"`
+	SecretKey string    `mapstructure:"secret_key"`
+	Ses       SesConfig `mapstructure:"ses"`
+	Cos       CosConfig `mapstructure:"cos"`
 }
 
 type SesConfig struct {

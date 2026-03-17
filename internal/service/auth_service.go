@@ -41,7 +41,7 @@ func (s *AuthService) SendCaptcha(email string) error {
 	if err != nil {
 		return err
 	}
-	err = utils.TencentSesSendEmail(config.GlobalConfig.Tencent.FromEmailAddr, to, captcha)
+	err = utils.TencentSesSendEmail(config.GlobalConfig.Tencent.Ses.FromEmailAddr, to, captcha)
 	if err != nil {
 		return err
 	}
