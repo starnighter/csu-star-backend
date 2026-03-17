@@ -7,10 +7,12 @@ import (
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"
+	"errors"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type AuthService struct {
@@ -30,8 +32,7 @@ func (s *AuthService) SendCaptcha(email string) error {
 		return err
 	}
 	if result != "" {
-		err = &constant.SendCaptchaRepeatedlyIn60sErr
-		return err
+		return &constant.SendCaptchaRepeatedlyIn60sErr
 	}
 
 	// 调用腾讯云SES SDK发送验证码到指定邮箱
@@ -50,6 +51,20 @@ func (s *AuthService) SendCaptcha(email string) error {
 	}
 
 	return nil
+}
+
+func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
+	stuNumber := GetStuNumberByEmail(email)
+	result, err := utils.RDB.GetDel(utils.Ctx, constant.CaptchaPrefix+stuNumber).Result()
+	if err != nil {
+		return err
+	}
+
+	if result == captcha {
+		return nil
+	}
+
+	return &constant.CaptchaNotMatchErr
 }
 
 func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode string) error {
@@ -96,6 +111,41 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 		return err
 	}
 
+	return nil
+}
+
+func (s *AuthService) Login(email, password string) (string, string, error) {
+	user, err := s.UserRepo.FindUserByEmail(email)
+	if err != nil || user == nil {
+		return "", "", err
+	}
+	if !utils.CheckPasswordHash(password, user.Password) {
+		return "", "", &constant.PasswordIncorrectErr
+
+	}
+	return utils.GenerateTokenPair(user.ID, string(user.Role))
+}
+
+func (s *AuthService) BindEmail(userID int64, email string) error {
+	user, err := s.UserRepo.FindUserByID(userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return &constant.UserNotExistErr
+	}
+	if user.Email != "" {
+		return &constant.EmailIsExistErr
+	}
+
+	user.Email = email
+	err = s.UserRepo.UpdateEmailByID(userID, email)
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return &constant.EmailHasBeenBoundErr
+	}
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

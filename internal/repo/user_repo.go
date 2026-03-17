@@ -14,6 +14,9 @@ import (
 type UserRepository interface {
 	FindInviterAndAddPoints(inviteCode string) (int64, error)
 	CreateUser(user *model.Users) error
+	UpdateEmailByID(userID int64, email string) error
+	FindUserByID(userID int64) (*model.Users, error)
+	FindUserByEmail(email string) (*model.Users, error)
 }
 
 type userRepository struct {
@@ -59,4 +62,32 @@ func (r *userRepository) FindInviterAndAddPoints(inviteCode string) (int64, erro
 
 func (r *userRepository) CreateUser(user *model.Users) error {
 	return r.db.Create(user).Error
+}
+
+func (r *userRepository) UpdateEmailByID(userID int64, email string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.Users{}).Where("id = ?", userID).Update("email", email)
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
+	})
+}
+
+func (r *userRepository) FindUserByID(userID int64) (*model.Users, error) {
+	var user model.Users
+	err := r.db.Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *userRepository) FindUserByEmail(email string) (*model.Users, error) {
+	var user model.Users
+	err := r.db.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
