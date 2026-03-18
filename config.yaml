@@ -37,6 +37,15 @@ oauth:
   qq:
     app_id: "your_qq_app_id"
     app_key: "your_qq_app_key"
+    redirect_uri: "your_web_uri"
   wechat:
     app_id: "your_wechat_app_id"
     app_secret: "your_wechat_app_secret"
+  github:
+    client_id: "your_github_client_id"
+    client_secret: "your_github_client_secret"
+    redirect_uri: "your_web_uri"
+  google:
+    client_id: "your_github_client_id"
+    client_secret: "your_github_client_secret"
+    redirect_uri: "your_web_uri"

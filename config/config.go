@@ -71,16 +71,31 @@ type CosConfig struct {
 type OauthConfig struct {
 	QQ     QQConfig     `mapstructure:"qq"`
 	Wechat WechatConfig `mapstructure:"wechat"`
+	GitHub GitHubConfig `mapstructure:"github"`
+	Google GoogleConfig `mapstructure:"google"`
 }
 
 type QQConfig struct {
-	AppID  string `mapstructure:"app_id"`
-	AppKey string `mapstructure:"app_key"`
+	AppID       string `mapstructure:"app_id"`
+	AppKey      string `mapstructure:"app_key"`
+	RedirectUri string `mapstructure:"redirect_uri"`
 }
 
 type WechatConfig struct {
 	AppID     string `mapstructure:"app_id"`
 	AppSecret string `mapstructure:"app_secret"`
+}
+
+type GitHubConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectUri  string `mapstructure:"redirect_uri"`
+}
+
+type GoogleConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectUri  string `mapstructure:"redirect_uri"`
 }
 
 func Init() {

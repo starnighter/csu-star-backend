@@ -102,7 +102,7 @@ func (r *userRepository) FindOrCreateOauthUser(provider model.OauthProvider, use
 	var user model.Users
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("provider = ? AND open_id = ?", provider, userInfo.OpenId).First(&userOauthBinding).Error
+		err := tx.Where("provider = ? AND openid = ?", provider, userInfo.OpenID).First(&userOauthBinding).Error
 		if err == nil {
 			// 用户已使用该提供商注册过，从数据库中查出后直接返回
 			return tx.First(&user, userOauthBinding.UserID).Error
@@ -126,7 +126,7 @@ func (r *userRepository) FindOrCreateOauthUser(provider model.OauthProvider, use
 		userOauthBinding = model.UserOauthBinding{
 			UserID:   user.ID,
 			Provider: provider,
-			OpenID:   userInfo.OpenId,
+			OpenID:   userInfo.OpenID,
 			BoundAt:  time.Now(),
 		}
 		if provider == model.OauthProviderWechat {

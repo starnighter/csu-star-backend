@@ -121,7 +121,7 @@ type UserOauthBinding struct {
 type UserInfo struct {
 	Nickname  string `json:"nickname"`
 	AvatarUrl string `json:"avatar_url"`
-	OpenId    string `json:"open_id"`
+	OpenID    string `json:"open_id"`
 	UnionId   string `json:"union_id"`
 }
 
