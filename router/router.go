@@ -16,7 +16,10 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	departmentRepo := repo.NewDepartmentRepository(db)
 	departmentSvc := service.NewDepartmentService(departmentRepo)
 	departmentHandler := handler.NewDepartmentHandler(departmentSvc)
-	r.GET("/departments", departmentHandler.GetAllDepartments)
+	r.Group("/departments")
+	{
+		r.GET("/", departmentHandler.GetAllDepartments)
+	}
 
 	return r
 }
