@@ -7,20 +7,16 @@ import (
 	"csu-star-backend/logger"
 )
 
-type DepartmentService interface {
-	GetAllDepartments() ([]*model.Departments, error)
+type DepartmentService struct {
+	departmentRepo repo.DepartmentRepository
 }
 
-type departmentService struct {
-	DepartmentRepo repo.DepartmentRepository
+func NewDepartmentService(dr repo.DepartmentRepository) *DepartmentService {
+	return &DepartmentService{dr}
 }
 
-func NewDepartmentService(dr repo.DepartmentRepository) DepartmentService {
-	return &departmentService{dr}
-}
-
-func (s *departmentService) GetAllDepartments() ([]*model.Departments, error) {
-	departments, err := s.DepartmentRepo.FindAllDepartments()
+func (s *DepartmentService) GetAllDepartments() ([]*model.Departments, error) {
+	departments, err := s.departmentRepo.FindAllDepartments()
 	if err != nil {
 		logger.Log.Error(err.Error())
 		return nil, &constant.QueryDepartmentsFailedErr
