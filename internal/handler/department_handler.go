@@ -21,8 +21,8 @@ func NewDepartmentHandler(svc service.DepartmentService) DepartmentHandler {
 	return &departmentHandler{svc}
 }
 
-func (s *departmentHandler) GetAllDepartments(c *gin.Context) {
-	departments, err := s.departmentService.GetAllDepartments()
+func (h *departmentHandler) GetAllDepartments(c *gin.Context) {
+	departments, err := h.departmentService.GetAllDepartments()
 	if err != nil {
 		resp.FailWithCode(c, http.StatusInternalServerError, resp.CodeFail, err.Error())
 		return

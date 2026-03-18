@@ -20,7 +20,7 @@ func NewDepartmentRepository(db *gorm.DB) DepartmentRepository {
 
 func (r *departmentRepository) FindAllDepartments() ([]*model.Departments, error) {
 	var departments []*model.Departments
-	result := r.db.Find(&departments)
+	result := r.db.Order("id ASC").Find(&departments)
 
 	if result.Error != nil {
 		return nil, result.Error
