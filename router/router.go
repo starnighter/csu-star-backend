@@ -1,6 +1,9 @@
 package router
 
 import (
+	"csu-star-backend/internal/handler"
+	"csu-star-backend/internal/repo"
+	"csu-star-backend/internal/service"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,5 +12,14 @@ import (
 
 func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	r := gin.Default()
+
+	departmentRepo := repo.NewDepartmentRepository(db)
+	departmentSvc := service.NewDepartmentService(departmentRepo)
+	departmentHandler := handler.NewDepartmentHandler(departmentSvc)
+	r.Group("/departments")
+	{
+		r.GET("/", departmentHandler.GetAllDepartments)
+	}
+
 	return r
 }
