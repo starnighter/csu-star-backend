@@ -116,16 +116,22 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 	return nil
 }
 
-func (s *AuthService) Login(email, password string) (string, string, error) {
+func (s *AuthService) Login(email, password string) (*model.Users, string, string, error) {
 	user, err := s.userRepo.FindUserByEmail(email)
-	if err != nil || user == nil {
-		return "", "", err
+	if user == nil {
+		return user, "", "", &constant.UserNotExistErr
+	}
+	if err != nil {
+		return user, "", "", err
 	}
 	if !utils.CheckPasswordHash(password, user.Password) {
-		return "", "", &constant.PasswordIncorrectErr
+		return user, "", "", &constant.PasswordIncorrectErr
 
 	}
-	return utils.GenerateTokenPair(user.ID, string(user.Role))
+
+	accessToken, refreshToken, err := utils.GenerateTokenPair(user.ID, string(user.Role))
+
+	return user, accessToken, refreshToken, err
 }
 
 func (s *AuthService) BindEmail(userID int64, email string) error {

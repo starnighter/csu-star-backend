@@ -39,6 +39,7 @@ var (
 	LoginByWechatFailedErr              = errs.BusinessErr{Code: 1011, Msg: "啊哦，微信登录失败了，请再试一次吧"}
 	LoginByGitHubFailedErr              = errs.BusinessErr{Code: 1012, Msg: "啊哦，GitHub登录失败了，请再试一次吧"}
 	LoginByGoogleFailedErr              = errs.BusinessErr{Code: 1013, Msg: "啊哦，Google登录失败了，请再试一次吧"}
+	TokenExpiredErr                     = errs.BusinessErr{Code: 1014, Msg: "token已过期，请重新登录吧"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

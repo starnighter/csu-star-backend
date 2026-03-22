@@ -46,9 +46,9 @@ func Fail(c *gin.Context, msg string) {
 }
 
 // FailWithCode 自定义错误码和 HTTP 状态码返回
-func FailWithCode(c *gin.Context, httpStatus int, msg string) {
+func FailWithCode(c *gin.Context, httpStatus int, code int, msg string) {
 	c.JSON(httpStatus, Response{
-		Code: CodeFail,
+		Code: code,
 		Msg:  msg,
 		Data: nil,
 	})

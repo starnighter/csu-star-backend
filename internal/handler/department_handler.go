@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/service"
 	"net/http"
 
@@ -20,7 +21,7 @@ func NewDepartmentHandler(svc *service.DepartmentService) *DepartmentHandler {
 func (h *DepartmentHandler) GetAllDepartments(c *gin.Context) {
 	departments, err := h.departmentService.GetAllDepartments()
 	if err != nil {
-		resp.FailWithCode(c, http.StatusInternalServerError, err.Error())
+		resp.FailWithCode(c, http.StatusInternalServerError, constant.QueryDepartmentsFailedErr.Code, constant.QueryDepartmentsFailedErr.Msg)
 		return
 	}
 

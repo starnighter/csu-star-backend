@@ -18,7 +18,7 @@ func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "请求头中未提供有效的 Bearer Token"})
+			resp.FailWithCode(c, http.StatusUnauthorized, resp.CodeFail, "请求头中未提供有效的 Bearer Token")
 			c.Abort()
 			return
 		}
@@ -38,7 +38,7 @@ func JWTAuth() gin.HandlerFunc {
 
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			resp.FailWithCode(c, http.StatusUnauthorized, resp.CodeFail, "未登录，请先登录哦")
 			c.Abort()
 			return
 		}
@@ -50,6 +50,7 @@ func JWTAuth() gin.HandlerFunc {
 		}
 
 		c.Set("user_id", claims.UserID)
+		c.Set("user_role", claims.UserRole)
 		c.Next()
 	}
 }

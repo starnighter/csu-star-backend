@@ -4,16 +4,18 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"csu-star-backend/config"
+	"csu-star-backend/internal/constant"
+	"csu-star-backend/logger"
 	"encoding/hex"
 	"errors"
 	"io"
-	"log"
 	"math/big"
 	"mime/multipart"
 	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,7 +43,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 	}
 	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).SignedString(secret)
 	if err != nil {
-		log.Fatalf("生成访问令牌失败：%v", err)
+		logger.Log.Error("生成访问令牌失败：", zap.Error(err))
 		return "", "", err
 	}
 
@@ -56,7 +58,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 	}
 	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString(secret)
 	if err != nil {
-		log.Fatalf("生成刷新令牌失败：%v", err)
+		logger.Log.Error("生成刷新令牌失败：", zap.Error(err))
 		return "", "", err
 	}
 
@@ -69,7 +71,7 @@ func ParseToken(tokenStr string) (*CustomClaims, error) {
 		return []byte(config.GlobalConfig.JWT.Secret), nil
 	})
 	if err != nil {
-		log.Printf("解析令牌失败：%v", err)
+		logger.Log.Error("解析令牌失败：", zap.Error(err))
 		return nil, err
 	}
 
@@ -77,6 +79,21 @@ func ParseToken(tokenStr string) (*CustomClaims, error) {
 		return claims, nil
 	}
 	return nil, errors.New("无效的令牌")
+}
+
+func GetTokenRemainingTime(tokenStr string) (int64, error) {
+	customClaims, err := ParseToken(tokenStr)
+	if err != nil {
+		return 0, err
+	}
+
+	expTime := customClaims.ExpiresAt.Time
+	remaining := expTime.Sub(time.Now())
+	if remaining <= 0 {
+		return 0, &constant.TokenExpiredErr
+	}
+
+	return remaining.Milliseconds(), nil
 }
 
 // HashPassword 生成密码加密后的 Hash 值
