@@ -1,6 +1,9 @@
 package constant
 
-import "csu-star-backend/internal/errs"
+import (
+	"csu-star-backend/internal/errs"
+	"errors"
+)
 
 const (
 	// redis key 前缀
@@ -18,6 +21,10 @@ const (
 
 var (
 	// 业务错误代码及消息
+	// 通用错误
+	InternalServerErr = errors.New("服务器内部错误")
+	BadRequestErr     = errors.New("参数错误")
+
 	// 登录相关错误
 	InviteCodeNotExistErr               = errs.BusinessErr{Code: 1001, Msg: "邀请码不存在"}
 	SendCaptchaRepeatedlyIn60sErr       = errs.BusinessErr{Code: 1002, Msg: "60s内重复发送邮箱验证码，等会再试试吧"}

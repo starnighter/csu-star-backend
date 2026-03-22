@@ -20,7 +20,7 @@ func NewDepartmentHandler(svc *service.DepartmentService) *DepartmentHandler {
 func (h *DepartmentHandler) GetAllDepartments(c *gin.Context) {
 	departments, err := h.departmentService.GetAllDepartments()
 	if err != nil {
-		resp.FailWithCode(c, http.StatusInternalServerError, resp.CodeFail, err.Error())
+		resp.FailWithCode(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
