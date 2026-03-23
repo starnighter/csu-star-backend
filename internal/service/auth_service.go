@@ -156,6 +156,48 @@ func (s *AuthService) BindEmail(userID int64, email string) error {
 	return nil
 }
 
+func (s *AuthService) Refresh(userID int64, userRole, refreshToken, tokenHash string) (string, string, error) {
+	remainingTime, err := utils.GetTokenRemainingTime(refreshToken)
+	if err != nil {
+		return "", "", err
+	}
+	if remainingTime <= 0 {
+		return "", "", &constant.RefreshTokenExpiredErr
+	}
+
+	_, err = utils.RDB.Set(utils.Ctx, constant.BlackListPrefix+tokenHash, time.Now().UnixMilli(), 604800*time.Second).Result()
+	if err != nil {
+		return "", "", err
+	}
+
+	return utils.GenerateTokenPair(userID, userRole)
+}
+
+func (s *AuthService) Logout(tokenHash string) error {
+	_, err := utils.RDB.Set(utils.Ctx, constant.BlackListPrefix+tokenHash, time.Now().UnixMilli(), 604800*time.Second).Result()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AuthService) ForgetPwd(email, password string) error {
+	user, err := s.userRepo.FindUserByEmail(email)
+	if user == nil {
+		return &constant.UserNotExistErr
+	}
+	if err != nil {
+		return err
+	}
+
+	hash, err := utils.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	return s.userRepo.UpdatePasswordByID(user.ID, hash)
+}
+
 func GetStuNumberByEmail(email string) string {
 	return strings.TrimSuffix(email, constant.SchoolEmailSuffix)
 }

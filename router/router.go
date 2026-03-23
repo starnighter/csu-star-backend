@@ -2,7 +2,6 @@ package router
 
 import (
 	"csu-star-backend/internal/handler"
-	"csu-star-backend/internal/middleware"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/internal/service"
 	"net/http"
@@ -28,21 +27,8 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	authHandler := handler.NewAuthHandler(authSvc, oauthSvc)
 	departmentHandler := handler.NewDepartmentHandler(departmentSvc)
 
-	// 公有API无需登录
-	publicApi := r.Group("/auth")
-	{
-		publicApi.POST("/register", authHandler.Register)
-	}
-
-	// 受保护的API需要登陆
-	protectedApi := r.Group("")
-	protectedApi.Use(middlewarepackage.JWTAuth())
-	{
-		deptApi := protectedApi.Group("/departments")
-		{
-			deptApi.GET("/", departmentHandler.GetAllDepartments)
-		}
-	}
+	SetupAuthRouter(r, authHandler)
+	SetUpDeptRouter(r, departmentHandler)
 
 	return r
 }

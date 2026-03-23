@@ -42,6 +42,20 @@ func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*m
 	return user, accessToken, refreshToken, err
 }
 
+func (s *OauthService) OauthBind(userID int64, provider model.OauthProvider, code string) (*model.UserOauthBinding, error) {
+	userInfo, err := s.fetchProviderUserInfo(provider, code)
+	if err != nil {
+		return nil, err
+	}
+
+	userOauthBing, err := s.userRepo.CreateUserOauthBinding(userID, provider, &userInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return userOauthBing, nil
+}
+
 func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code string) (model.UserInfo, error) {
 	switch provider {
 	case model.OauthProviderQQ:

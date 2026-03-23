@@ -90,7 +90,7 @@ func GetTokenRemainingTime(tokenStr string) (int64, error) {
 	expTime := customClaims.ExpiresAt.Time
 	remaining := expTime.Sub(time.Now())
 	if remaining <= 0 {
-		return 0, &constant.TokenExpiredErr
+		return 0, &constant.AccessTokenExpiredErr
 	}
 
 	return remaining.Milliseconds(), nil

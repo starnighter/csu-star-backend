@@ -16,9 +16,11 @@ type UserRepository interface {
 	FindInviterAndAddPoints(inviteCode string) (int64, error)
 	CreateUser(user *model.Users) error
 	UpdateEmailByID(userID int64, email string) error
+	UpdatePasswordByID(userID int64, password string) error
 	FindUserByID(userID int64) (*model.Users, error)
 	FindUserByEmail(email string) (*model.Users, error)
 	FindOrCreateOauthUser(provider model.OauthProvider, userInfo *model.UserInfo) (*model.Users, error)
+	CreateUserOauthBinding(userID int64, provider model.OauthProvider, userInfo *model.UserInfo) (*model.UserOauthBinding, error)
 }
 
 type userRepository struct {
@@ -135,4 +137,32 @@ func (r *userRepository) FindOrCreateOauthUser(provider model.OauthProvider, use
 		return tx.Create(&userOauthBinding).Error
 	})
 	return &user, err
+}
+
+func (r *userRepository) CreateUserOauthBinding(userID int64, provider model.OauthProvider, userInfo *model.UserInfo) (*model.UserOauthBinding, error) {
+	var userOauthBinding model.UserOauthBinding
+
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		userOauthBinding = model.UserOauthBinding{
+			UserID:   userID,
+			Provider: provider,
+			OpenID:   userInfo.OpenID,
+			BoundAt:  time.Now(),
+		}
+		if provider == model.OauthProviderWechat {
+			userOauthBinding.UnionID = userInfo.UnionId
+		}
+		return tx.Create(&userOauthBinding).Error
+	})
+	return &userOauthBinding, err
+}
+
+func (r *userRepository) UpdatePasswordByID(userID int64, password string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Model(&model.Users{}).Where("id = ?", userID).Update("password", password).Error
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 }

@@ -129,7 +129,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 func (h *AuthHandler) BindEmail(c *gin.Context) {
 	var r req.BindEmailReq
-	value, _ := c.Get("userID")
+	value, _ := c.Get(constant.GinUserID)
 	userID := value.(int64)
 
 	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
@@ -200,4 +200,103 @@ func (h *AuthHandler) OauthLogin(c *gin.Context) {
 	}
 
 	resp.Success(c, respData)
+}
+
+func (h *AuthHandler) OauthBind(c *gin.Context) {
+	var r req.OauthBindReq
+	value, _ := c.Get(constant.GinUserID)
+	userID := value.(int64)
+	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+
+	userOauthBinding, err := h.oauthSvc.OauthBind(userID, model.OauthProvider(r.Provider), r.Code)
+	switch {
+	case errors.Is(err, &constant.LoginByQQFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByQQFailedErr.Code, constant.LoginByQQFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByWechatFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByWechatFailedErr.Code, constant.LoginByWechatFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByGitHubFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGitHubFailedErr.Code, constant.LoginByGitHubFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByGoogleFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGoogleFailedErr.Code, constant.LoginByGoogleFailedErr.Msg)
+		return
+	case err != nil:
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	o := resp.OauthBindResp{
+		Provider: r.Provider,
+		BoundAt:  strconv.FormatInt(userOauthBinding.BoundAt.UnixMilli(), 10),
+	}
+
+	resp.Success(c, o)
+}
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	var r req.RefreshTokenReq
+
+	v, _ := c.Get(constant.GinAccessTokenHash)
+	tokenHash := v.(string)
+	v, _ = c.Get(constant.GinUserID)
+	userID := v.(int64)
+	v, _ = c.Get(constant.GinUserRole)
+	userRole, _ := v.(string)
+
+	accessToken, _, err := h.authSvc.Refresh(userID, userRole, r.RefreshToken, tokenHash)
+	if errors.Is(err, &constant.RefreshTokenExpiredErr) {
+		resp.FailWithCode(c, http.StatusUnauthorized, constant.RefreshTokenExpiredErr.Code, constant.RefreshTokenExpiredErr.Msg)
+		return
+	}
+	if err != nil {
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	remainingTime, err := utils.GetTokenRemainingTime(accessToken)
+	if err != nil {
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	rt := resp.RefreshTokenResp{
+		AccessToken: accessToken,
+		ExpiresIn:   strconv.FormatInt(remainingTime, 10),
+	}
+
+	resp.Success(c, rt)
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	v, _ := c.Get(constant.GinAccessTokenHash)
+	tokenHash := v.(string)
+
+	err := h.authSvc.Logout(tokenHash)
+	if err != nil {
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	resp.SuccessMsg(c, "登出成功！")
+}
+
+func (h *AuthHandler) ForgetPwd(c *gin.Context) {
+	var r req.ForgetPwdReq
+
+	err := h.authSvc.ForgetPwd(r.Email, r.Password)
+	if errors.Is(err, &constant.UserNotExistErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
+		return
+	}
+	if err != nil {
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	resp.SuccessMsg(c, "修改密码成功，请重新登录！")
 }

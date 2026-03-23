@@ -28,6 +28,7 @@ func JWTAuth() gin.HandlerFunc {
 		data := []byte(tokenString)
 		hash := md5.Sum(data)
 		tokenHash := hex.EncodeToString(hash[:])
+		c.Set(constant.GinAccessTokenHash, tokenHash)
 		// 校验黑名单
 		isBlacklisted, err := utils.RDB.Get(utils.Ctx, constant.BlackListPrefix+tokenHash).Result()
 		if !errors.Is(err, redis.Nil) && isBlacklisted != "" {
@@ -49,8 +50,8 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user_id", claims.UserID)
-		c.Set("user_role", claims.UserRole)
+		c.Set(constant.GinUserID, claims.UserID)
+		c.Set(constant.GinUserRole, claims.UserRole)
 		c.Next()
 	}
 }
