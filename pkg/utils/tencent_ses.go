@@ -38,7 +38,7 @@ func TencentSesSendEmail(from string, to []string, captcha string) error {
 	req.Subject = common.StringPtr(config.GlobalConfig.Tencent.Ses.Subject)
 	req.Destination = common.StringPtrs(to)
 	req.TriggerType = common.Uint64Ptr(1)
-	captchaJson := common.StringPtr("{\"captcha\":\"" + captcha + "\"}")
+	captchaJson := common.StringPtr("{\"code\":\"" + captcha + "\"}")
 	req.Template = &ses.Template{
 		TemplateID:   common.Uint64Ptr(config.GlobalConfig.Tencent.Ses.TemplateID),
 		TemplateData: captchaJson,
@@ -46,7 +46,7 @@ func TencentSesSendEmail(from string, to []string, captcha string) error {
 
 	resp, err := sesClient.SendEmail(req)
 	var tencentCloudSDKError *tencErr.TencentCloudSDKError
-	if errors.As(err, &tencentCloudSDKError) {
+	if errors.Is(err, tencentCloudSDKError) {
 		logger.Log.Error("调用腾讯云SES SDK发送邮件Api失败：", zap.Error(err))
 		return err
 	}

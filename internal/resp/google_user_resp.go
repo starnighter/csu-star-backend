@@ -1,7 +1,7 @@
 package resp
 
 type GoogleUserResp struct {
-	ID      string `json:"id"`
+	Sub     string `json:"sub"`
 	Name    string `json:"name"`
 	Picture string `json:"picture"`
 }

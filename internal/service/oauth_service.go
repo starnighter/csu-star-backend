@@ -245,7 +245,7 @@ func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
 
 	client := conf.Client(context.Background(), token)
 
-	userResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	userResp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	if err != nil {
 		return userInfo, loginErr
 	}
@@ -263,7 +263,7 @@ func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
 
 	userInfo.Nickname = googleUserResp.Name
 	userInfo.AvatarUrl = googleUserResp.Picture
-	userInfo.OpenID = googleUserResp.ID
+	userInfo.OpenID = googleUserResp.Sub
 
 	return userInfo, nil
 }
