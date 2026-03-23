@@ -1,18 +1,21 @@
 package service
 
 import (
-	"bytes"
+	"context"
 	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
-	"csu-star-backend/internal/req"
 	"csu-star-backend/internal/resp"
 	"csu-star-backend/pkg/utils"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/google"
 )
 
 type OauthService struct {
@@ -24,27 +27,29 @@ func NewOauthService(ur repo.UserRepository, c *http.Client) *OauthService {
 	return &OauthService{userRepo: ur, httpClient: c}
 }
 
-func (s *OauthService) OauthLogin(provider model.OauthProvider, code string, meta req.OauthLoginMeta) (string, string, error) {
-	userInfo, err := s.fetchProviderUserInfo(provider, code, meta)
+func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*model.Users, string, string, error) {
+	userInfo, err := s.fetchProviderUserInfo(provider, code)
 	if err != nil {
-		return "", "", err
+		return nil, "", "", err
 	}
 
 	user, err := s.userRepo.FindOrCreateOauthUser(provider, &userInfo)
 	if err != nil {
-		return "", "", err
+		return nil, "", "", err
 	}
-	return utils.GenerateTokenPair(user.ID, string(user.Role))
+
+	accessToken, refreshToken, err := utils.GenerateTokenPair(user.ID, string(user.Role))
+	return user, accessToken, refreshToken, err
 }
 
-func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code string, meta req.OauthLoginMeta) (model.UserInfo, error) {
+func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code string) (model.UserInfo, error) {
 	switch provider {
 	case model.OauthProviderQQ:
 		return s.handleQQ(code)
 	case model.OauthProviderWechat:
 		return s.handleWechat(code)
 	case model.OauthProviderGithub:
-		return s.handleGitHub(code, meta)
+		return s.handleGitHub(code)
 	case model.OauthProviderGoogle:
 		return s.handleGoogle(code)
 	default:
@@ -177,53 +182,33 @@ func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
 	return userInfo, nil
 }
 
-func (s *OauthService) handleGitHub(code string, meta req.OauthLoginMeta) (model.UserInfo, error) {
+func (s *OauthService) handleGitHub(code string) (model.UserInfo, error) {
 	var userInfo model.UserInfo
 	loginErr := &constant.LoginByGitHubFailedErr
 
-	// 通过code和meta获取accessToken
-	tokenReqUrl := "https://github.com/login/oauth/access_token"
-	payload := map[string]interface{}{
-		"client_id":     config.GlobalConfig.Oauth.GitHub.ClientID,
-		"client_secret": config.GlobalConfig.Oauth.GitHub.ClientSecret,
-		"code":          code,
-		"redirect_uri":  config.GlobalConfig.Oauth.GitHub.RedirectUri,
-		"code_verifier": meta.CodeChallenge,
+	conf := &oauth2.Config{
+		ClientID:     config.GlobalConfig.Oauth.GitHub.ClientID,
+		ClientSecret: config.GlobalConfig.Oauth.GitHub.ClientSecret,
+		RedirectURL:  config.GlobalConfig.Oauth.GitHub.RedirectUri,
+		Endpoint:     github.Endpoint,
 	}
-	bodyData, _ := json.Marshal(payload)
 
-	tokenReq, _ := http.NewRequest(http.MethodPost, tokenReqUrl, bytes.NewBuffer(bodyData))
-	tokenReq.Header.Set("Content-Type", "application/json")
-	tokenReq.Header.Set("Accept", "application/json")
-	tokenResp, err := s.httpClient.Do(tokenReq)
+	token, err := conf.Exchange(context.Background(), code)
 	if err != nil {
-		return userInfo, err
-	}
-	if tokenResp.StatusCode != http.StatusOK {
-		return userInfo, loginErr
-	}
-	defer tokenResp.Body.Close()
-
-	var githubTokenResp resp.GitHubTokenResp
-	err = json.NewDecoder(tokenResp.Body).Decode(&githubTokenResp)
-	if err != nil {
-		return userInfo, err
-	}
-	if githubTokenResp.AccessToken == "" {
 		return userInfo, loginErr
 	}
 
-	// 通过accessToken获取用户信息
-	userReq, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	client := conf.Client(context.Background(), token)
+
+	userResp, err := client.Get("https://api.github.com/user")
 	if err != nil {
-		return userInfo, err
-	}
-	userReq.Header.Set("Authorization", "Bearer "+githubTokenResp.AccessToken)
-	userResp, err := s.httpClient.Do(userReq)
-	if err != nil {
-		return userInfo, err
+		return userInfo, loginErr
 	}
 	defer userResp.Body.Close()
+
+	if userResp.StatusCode != http.StatusOK {
+		return userInfo, loginErr
+	}
 
 	var githubUserResp resp.GitHubUserResp
 	err = json.NewDecoder(userResp.Body).Decode(&githubUserResp)
@@ -242,42 +227,33 @@ func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
 	var userInfo model.UserInfo
 	loginErr := &constant.LoginByGoogleFailedErr
 
-	// 通过code获取accessToken
-	tokenReqUrl := "https://oauth2.googleapis.com/token"
-	payload := map[string]string{
-		"client_id":     config.GlobalConfig.Oauth.Google.ClientID,
-		"client_secret": config.GlobalConfig.Oauth.Google.ClientSecret,
-		"code":          code,
-		"grant_type":    "authorization_code",
-		"redirect_uri":  config.GlobalConfig.Oauth.Google.RedirectUri,
+	conf := &oauth2.Config{
+		ClientID:     config.GlobalConfig.Oauth.Google.ClientID,
+		ClientSecret: config.GlobalConfig.Oauth.Google.ClientSecret,
+		RedirectURL:  config.GlobalConfig.Oauth.Google.RedirectUri,
+		Scopes: []string{
+			"https://www.googleapis.com/auth/userinfo.profile",
+			"https://www.googleapis.com/auth/userinfo.email",
+		},
+		Endpoint: google.Endpoint,
 	}
-	bodyData, _ := json.Marshal(payload)
 
-	tokenReq, _ := http.NewRequest(http.MethodPost, tokenReqUrl, bytes.NewBuffer(bodyData))
-	tokenReq.Header.Set("Content-Type", "application/json")
-	tokenResp, err := s.httpClient.Do(tokenReq)
+	token, err := conf.Exchange(context.Background(), code)
 	if err != nil {
-		return userInfo, err
-	}
-	defer tokenResp.Body.Close()
-
-	var googleTokenResp resp.GoogleTokenResp
-	err = json.NewDecoder(tokenResp.Body).Decode(&googleTokenResp)
-	if err != nil {
-		return userInfo, err
-	}
-	if googleTokenResp.AccessToken == "" {
 		return userInfo, loginErr
 	}
 
-	// 通过accessToken获取用户信息
-	userReq, _ := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
-	userReq.Header.Set("Authorization", "Bearer "+googleTokenResp.AccessToken)
-	userResp, err := s.httpClient.Do(userReq)
+	client := conf.Client(context.Background(), token)
+
+	userResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		return userInfo, err
+		return userInfo, loginErr
 	}
 	defer userResp.Body.Close()
+
+	if userResp.StatusCode != http.StatusOK {
+		return userInfo, loginErr
+	}
 
 	var googleUserResp resp.GoogleUserResp
 	err = json.NewDecoder(userResp.Body).Decode(&googleUserResp)

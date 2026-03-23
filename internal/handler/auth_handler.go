@@ -2,6 +2,7 @@ package handler
 
 import (
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/req"
 	"csu-star-backend/internal/resp"
 	"csu-star-backend/internal/service"
@@ -102,6 +103,81 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	u := resp.UserProfileResp{
+		ID:                strconv.FormatInt(user.ID, 10),
+		Nickname:          user.Nickname,
+		AvatarUrl:         user.AvatarUrl,
+		Role:              string(user.Role),
+		EmailVerified:     user.EmailVerified,
+		FreeDownloadCount: strconv.Itoa(user.FreeDownloadCount),
+	}
+
+	remaining, err := utils.GetTokenRemainingTime(accessToken)
+	respData := resp.LoginResp{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    strconv.FormatInt(remaining, 10),
+		UserProfile:  u,
+	}
+
+	resp.Success(c, respData)
+}
+
+func (h *AuthHandler) BindEmail(c *gin.Context) {
+	var r req.BindEmailReq
+	value, _ := c.Get("userID")
+	userID := value.(int64)
+
+	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+
+	err := h.authSvc.BindEmail(userID, r.Email)
+	switch {
+	case errors.Is(err, &constant.UserNotExistErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
+		return
+	case errors.Is(err, &constant.EmailIsExistErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.EmailIsExistErr.Code, constant.EmailIsExistErr.Msg)
+		return
+	case errors.Is(err, &constant.EmailHasBeenBoundErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.EmailHasBeenBoundErr.Code, constant.EmailHasBeenBoundErr.Msg)
+		return
+	case err != nil:
+		resp.Fail(c, constant.InternalServerErr.Error())
+		return
+	}
+
+	resp.SuccessMsg(c, "邮箱绑定成功")
+}
+
+func (h *AuthHandler) OauthLogin(c *gin.Context) {
+	var r req.OauthLoginReq
+	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+
+	user, accessToken, refreshToken, err := h.oauthSvc.OauthLogin(model.OauthProvider(r.Provider), r.Code)
+	switch {
+	case errors.Is(err, &constant.LoginByQQFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByQQFailedErr.Code, constant.LoginByQQFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByWechatFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByWechatFailedErr.Code, constant.LoginByWechatFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByGitHubFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGitHubFailedErr.Code, constant.LoginByGitHubFailedErr.Msg)
+		return
+	case errors.Is(err, &constant.LoginByGoogleFailedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGoogleFailedErr.Code, constant.LoginByGoogleFailedErr.Msg)
+		return
+	case err != nil:
 		resp.Fail(c, constant.InternalServerErr.Error())
 		return
 	}
