@@ -37,6 +37,9 @@ func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*m
 	if err != nil {
 		return nil, "", "", err
 	}
+	if user.Status == model.UserStatusBanned {
+		return nil, "", "", &constant.UserBannedErr
+	}
 
 	accessToken, refreshToken, err := utils.GenerateTokenPair(user.ID, string(user.Role))
 	return user, accessToken, refreshToken, err
@@ -187,6 +190,9 @@ func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
 
 	// 上传获取到的头像 URL 到 COS，并获取保存后的 COS 永久下载链接
 	avatarUrl, err := utils.TencentCosUploadByStream(avatarResp.Body, constant.TencentCosAvatarsKeyPrefix, ".jpg")
+	if err != nil {
+		return userInfo, err
+	}
 
 	userInfo.Nickname = wechatUserResp.Nickname
 	userInfo.AvatarUrl = avatarUrl

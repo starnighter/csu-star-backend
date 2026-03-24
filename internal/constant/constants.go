@@ -44,6 +44,8 @@ var (
 	LoginByGoogleFailedErr              = errs.BusinessErr{Code: 1013, Msg: "啊哦，Google登录失败了，请再试一次吧"}
 	AccessTokenExpiredErr               = errs.BusinessErr{Code: 1014, Msg: "access_token已过期，请尝试刷新token或重新登录吧"}
 	RefreshTokenExpiredErr              = errs.BusinessErr{Code: 1015, Msg: "refresh_token已过期，请重新登录把"}
+	UserBannedErr                       = errs.BusinessErr{Code: 1016, Msg: "用户已被封禁，无法登录"}
+	NotRefreshTokenErr                  = errs.BusinessErr{Code: 1017, Msg: "传入的token不是refresh_token，请重新传入"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

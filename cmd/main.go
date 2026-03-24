@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"csu-star-backend/config"
+	"csu-star-backend/internal/repo"
+	"csu-star-backend/internal/task"
 	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"
 	"csu-star-backend/router"
@@ -53,6 +55,12 @@ func main() {
 	// 初始化路由及依赖配置
 	r := router.SetUpRouter(db, oauthClient)
 
+	// 初始化定时任务
+	aggregateRepo := repo.NewAggregateRepository(db)
+	appCtx, cancelBackgroundTasks := context.WithCancel(context.Background())
+	scheduler := task.NewScheduler(db, aggregateRepo)
+	scheduler.Start(appCtx)
+
 	// 配置HTTP Sever
 	addr := fmt.Sprintf("0.0.0.0:%v", globalCfg.Server.Port)
 	srv := &http.Server{
@@ -75,6 +83,7 @@ func main() {
 	// 阻塞等待信号
 	<-quit
 	logger.Log.Info("正在关闭服务......")
+	cancelBackgroundTasks()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

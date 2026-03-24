@@ -11,11 +11,11 @@ func SetupAuthRouter(r *gin.Engine, authHandler *handler.AuthHandler) {
 	g := r.Group("/auth")
 	{
 		g.POST("/forget", authHandler.ForgetPwd)
+		g.POST("/refresh", authHandler.Refresh)
 
 		authGroup := g.Group("")
 		authGroup.Use(middlewarepackage.JWTAuth())
 		{
-			authGroup.POST("/refresh", authHandler.Refresh)
 			authGroup.POST("/logout", authHandler.Logout)
 		}
 

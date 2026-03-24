@@ -1,20 +1,16 @@
 package repo
 
 import (
-	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
-	"csu-star-backend/pkg/utils"
 	"errors"
-	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type UserRepository interface {
-	FindInviterAndAddPoints(inviteCode string) (int64, error)
 	CreateUser(user *model.Users) error
+	RewardInviter(inviterID int64) error
 	UpdateEmailByID(userID int64, email string) error
 	UpdatePasswordByID(userID int64, password string) error
 	FindUserByID(userID int64) (*model.Users, error)
@@ -31,41 +27,63 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	return &userRepository{db: db}
 }
 
-func (r *userRepository) FindInviterAndAddPoints(inviteCode string) (int64, error) {
-	inviterIDStr, err := utils.RDB.GetDel(utils.Ctx, constant.InviteCodePrefix+inviteCode).Result()
-	if errors.Is(err, redis.Nil) {
-		return 0, &constant.InviteCodeNotExistErr
-	} else if err != nil {
-		return 0, err
-	}
-
-	inviterID, err := strconv.ParseInt(inviterIDStr, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-
-	var user model.Users
-	err = r.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&user).Where(
-			"id = ? AND status = ?",
-			inviterID,
-			model.UserStatusActive,
-		).Update("points", gorm.Expr("points + ?", 3))
-		if result.Error != nil {
-			return result.Error
+func (r *userRepository) CreateUser(user *model.Users) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return err
 		}
-
-		return nil
+		if user.Points <= 0 {
+			return nil
+		}
+		return tx.Create(&model.PointsRecords{
+			UserID:    user.ID,
+			Type:      model.PointsTypeInitial,
+			Delta:     user.Points,
+			Balance:   user.Points,
+			Reason:    "新用户注册初始积分",
+			RelatedID: 0,
+		}).Error
 	})
-	if err != nil {
-		return 0, err
-	}
-
-	return inviterID, nil
 }
 
-func (r *userRepository) CreateUser(user *model.Users) error {
-	return r.db.Create(user).Error
+func (r *userRepository) RewardInviter(inviterID int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var inviter model.Users
+		if err := tx.Select("id, points, status").Where("id = ?", inviterID).First(&inviter).Error; err != nil {
+			return err
+		}
+		if inviter.Status != model.UserStatusActive {
+			return gorm.ErrRecordNotFound
+		}
+
+		if err := tx.Model(&model.Users{}).
+			Where("id = ?", inviterID).
+			Update("points", gorm.Expr("points + ?", 3)).Error; err != nil {
+			return err
+		}
+		inviter.Points += 3
+
+		if err := tx.Create(&model.PointsRecords{
+			UserID:    inviterID,
+			Type:      model.PointsTypeInvite,
+			Delta:     3,
+			Balance:   inviter.Points,
+			Reason:    "邀请新用户注册奖励积分",
+			RelatedID: 0,
+		}).Error; err != nil {
+			return err
+		}
+
+		return tx.Create(&model.Notifications{
+			UserID:    inviterID,
+			Type:      model.NotificationPointsChanged,
+			Title:     "邀请奖励到账",
+			Content:   "你邀请的新用户已完成注册，获得 3 积分奖励。",
+			RelatedID: 0,
+			IsRead:    false,
+			IsGlobal:  false,
+		}).Error
+	})
 }
 
 func (r *userRepository) UpdateEmailByID(userID int64, email string) error {

@@ -102,6 +102,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.PasswordIncorrectErr.Code, constant.PasswordIncorrectErr.Msg)
 		return
 	}
+	if errors.Is(err, &constant.UserBannedErr) {
+		resp.FailWithCode(c, http.StatusForbidden, constant.UserBannedErr.Code, constant.UserBannedErr.Msg)
+		return
+	}
 	if err != nil {
 		resp.Fail(c, constant.InternalServerErr.Error())
 		return
@@ -177,6 +181,9 @@ func (h *AuthHandler) OauthLogin(c *gin.Context) {
 	case errors.Is(err, &constant.LoginByGoogleFailedErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGoogleFailedErr.Code, constant.LoginByGoogleFailedErr.Msg)
 		return
+	case errors.Is(err, &constant.UserBannedErr):
+		resp.FailWithCode(c, http.StatusForbidden, constant.UserBannedErr.Code, constant.UserBannedErr.Msg)
+		return
 	case err != nil:
 		resp.Fail(c, constant.InternalServerErr.Error())
 		return
@@ -240,21 +247,18 @@ func (h *AuthHandler) OauthBind(c *gin.Context) {
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	var r req.RefreshTokenReq
+	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
 
-	v, _ := c.Get(constant.GinAccessTokenHash)
-	tokenHash := v.(string)
-	v, _ = c.Get(constant.GinUserID)
-	userID := v.(int64)
-	v, _ = c.Get(constant.GinUserRole)
-	userRole, _ := v.(string)
-
-	accessToken, _, err := h.authSvc.Refresh(userID, userRole, r.RefreshToken, tokenHash)
+	accessToken, refreshToken, err := h.authSvc.Refresh(r.RefreshToken)
 	if errors.Is(err, &constant.RefreshTokenExpiredErr) {
 		resp.FailWithCode(c, http.StatusUnauthorized, constant.RefreshTokenExpiredErr.Code, constant.RefreshTokenExpiredErr.Msg)
 		return
 	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		resp.FailWithCode(c, http.StatusUnauthorized, resp.CodeFail, "refresh_token无效，请重新登录")
 		return
 	}
 
@@ -265,8 +269,9 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 
 	rt := resp.RefreshTokenResp{
-		AccessToken: accessToken,
-		ExpiresIn:   strconv.FormatInt(remainingTime, 10),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    strconv.FormatInt(remainingTime, 10),
 	}
 
 	resp.Success(c, rt)
@@ -287,10 +292,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 func (h *AuthHandler) ForgetPwd(c *gin.Context) {
 	var r req.ForgetPwdReq
+	if err := c.ShouldBindBodyWithJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
 
-	err := h.authSvc.ForgetPwd(r.Email, r.Password)
+	err := h.authSvc.ForgetPwd(r.Email, r.Captcha, r.Password)
 	if errors.Is(err, &constant.UserNotExistErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
+		return
+	}
+	if errors.Is(err, &constant.CaptchaNotMatchErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.CaptchaNotMatchErr.Code, constant.CaptchaNotMatchErr.Msg)
 		return
 	}
 	if err != nil {
