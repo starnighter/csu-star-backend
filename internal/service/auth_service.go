@@ -50,8 +50,8 @@ func (s *AuthService) SendCaptcha(email string) error {
 	if err != nil {
 		return err
 	}
-	// 存入redis防止60s内重复访问并供后续校验
-	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 60*time.Second).Err(); err != nil {
+	// 存入redis防止300s内重复访问并供后续校验
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 3000*time.Second).Err(); err != nil {
 		return err
 	}
 
@@ -88,12 +88,14 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 		}
 	}
 
-	var inviterID int64
+	var inviterID *int64
 	if inviteCode != "" {
-		inviterID, err = s.invitationRepo.FindInviterIDByCode(inviteCode)
-		if err != nil {
+		foundInviterID, findErr := s.invitationRepo.FindInviterIDByCode(inviteCode)
+		if findErr != nil {
+			err = findErr
 			return err
 		}
+		inviterID = &foundInviterID
 	}
 
 	user := &model.Users{
@@ -116,8 +118,8 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 			logger.Log.Error("使用邀请码创建新用户后，更新邀请信息失败：", zap.Error(err))
 			return err
 		}
-		if consumedInviterID != inviterID {
-			logger.Log.Error("邀请码邀请人不一致", zap.Int64("expected_inviter_id", inviterID), zap.Int64("actual_inviter_id", consumedInviterID))
+		if inviterID == nil || consumedInviterID != *inviterID {
+			logger.Log.Error("邀请码邀请人不一致", zap.Int64p("expected_inviter_id", inviterID), zap.Int64("actual_inviter_id", consumedInviterID))
 			return &constant.InviteCodeNotExistErr
 		}
 		if err := s.userRepo.RewardInviter(consumedInviterID); err != nil {

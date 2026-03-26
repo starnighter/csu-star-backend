@@ -88,7 +88,7 @@ func (h *TeacherHandler) GetTeacherRankings(c *gin.Context) {
 }
 
 func (h *TeacherHandler) GetTeacherEvaluations(c *gin.Context) {
-	teacherID, err := strconv.ParseInt(c.Param("teacher_id"), 10, 64)
+	teacherID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || teacherID <= 0 {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
@@ -124,7 +124,7 @@ func (h *TeacherHandler) GetTeacherEvaluations(c *gin.Context) {
 }
 
 func (h *TeacherHandler) CreateTeacherEvaluation(c *gin.Context) {
-	teacherID, err := strconv.ParseInt(c.Param("teacher_id"), 10, 64)
+	teacherID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || teacherID <= 0 {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,10 +17,13 @@ import (
 )
 
 const rankingCacheTTL = 2 * time.Hour
+const initialRefreshDelay = 15 * time.Second
 
 type Scheduler struct {
 	db            *gorm.DB
 	aggregateRepo repo.AggregateRepository
+	refreshing    atomic.Bool
+	maintaining   atomic.Bool
 }
 
 func NewScheduler(db *gorm.DB, ar repo.AggregateRepository) *Scheduler {
@@ -30,8 +34,7 @@ func NewScheduler(db *gorm.DB, ar repo.AggregateRepository) *Scheduler {
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
-	s.runDailyMaintenance()
-	s.runRefresh()
+	go s.runInitialTasks(ctx)
 
 	go s.runTicker(ctx, time.Hour, s.runRefresh)
 	go s.runTicker(ctx, 6*time.Hour, s.runDailyMaintenance)
@@ -50,7 +53,28 @@ func (s *Scheduler) runTicker(ctx context.Context, interval time.Duration, fn fu
 	}
 }
 
+func (s *Scheduler) runInitialTasks(ctx context.Context) {
+	// Delay heavy aggregate refreshes so API startup is not blocked by bulk writes.
+	timer := time.NewTimer(initialRefreshDelay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+	}
+
+	s.runDailyMaintenance()
+	s.runRefresh()
+}
+
 func (s *Scheduler) runRefresh() {
+	if !s.refreshing.CompareAndSwap(false, true) {
+		logger.Log.Info("跳过聚合刷新：上一次刷新仍在执行")
+		return
+	}
+	defer s.refreshing.Store(false)
+
 	if err := s.aggregateRepo.RefreshTeacherStats(); err != nil {
 		logger.Log.Error("刷新教师统计失败", zap.Error(err))
 	}
@@ -94,6 +118,12 @@ func (s *Scheduler) runRefresh() {
 }
 
 func (s *Scheduler) runDailyMaintenance() {
+	if !s.maintaining.CompareAndSwap(false, true) {
+		logger.Log.Info("跳过日常维护：上一次维护仍在执行")
+		return
+	}
+	defer s.maintaining.Store(false)
+
 	if err := s.aggregateRepo.TrimSearchHistories(20); err != nil {
 		logger.Log.Error("清理搜索历史失败", zap.Error(err))
 	}
@@ -116,22 +146,18 @@ func (s *Scheduler) syncTeacherRankingRedis() error {
 		return err
 	}
 
-	if err := deleteKeysByPattern("cache:ranking:teacher:*"); err != nil {
-		return err
-	}
-
 	keys := make(map[string]struct{})
-	pipe := utils.RDB.Pipeline()
+	snapshots := make(map[string]map[string]float64)
 	for _, item := range items {
 		member := strconv.FormatInt(item.TeacherID, 10)
 		keyAll := TeacherRankingCacheKey(item.Dimension, item.Period, 0)
 		keyDept := TeacherRankingCacheKey(item.Dimension, item.Period, item.DeptID)
 		keys[keyAll] = struct{}{}
 		keys[keyDept] = struct{}{}
-		pipe.ZAdd(utils.Ctx, keyAll, redis.Z{Score: item.Score, Member: member})
-		pipe.ZAdd(utils.Ctx, keyDept, redis.Z{Score: item.Score, Member: member})
+		addSnapshotMember(snapshots, keyAll, member, item.Score)
+		addSnapshotMember(snapshots, keyDept, member, item.Score)
 	}
-	if _, err := pipe.Exec(utils.Ctx); err != nil {
+	if err := syncSortedSetSnapshots(snapshots); err != nil {
 		return err
 	}
 	return expireRedisKeys(keys)
@@ -152,18 +178,14 @@ func (s *Scheduler) syncCourseRankingRedis() error {
 		return err
 	}
 
-	if err := deleteKeysByPattern("cache:ranking:course:*"); err != nil {
-		return err
-	}
-
 	keys := make(map[string]struct{})
-	pipe := utils.RDB.Pipeline()
+	snapshots := make(map[string]map[string]float64)
 	for _, item := range items {
 		key := CourseRankingCacheKey(item.Dimension, item.Period)
 		keys[key] = struct{}{}
-		pipe.ZAdd(utils.Ctx, key, redis.Z{Score: item.Score, Member: strconv.FormatInt(item.CourseID, 10)})
+		addSnapshotMember(snapshots, key, strconv.FormatInt(item.CourseID, 10), item.Score)
 	}
-	if _, err := pipe.Exec(utils.Ctx); err != nil {
+	if err := syncSortedSetSnapshots(snapshots); err != nil {
 		return err
 	}
 	return expireRedisKeys(keys)
@@ -193,10 +215,6 @@ func (s *Scheduler) syncResourceRankingRedis() error {
 		return err
 	}
 
-	if err := deleteKeysByPattern("cache:ranking:resource:*"); err != nil {
-		return err
-	}
-
 	keys := map[string]struct{}{
 		ResourceRankingCacheKey("hot_score"): {},
 		ResourceRankingCacheKey("downloads"): {},
@@ -204,7 +222,7 @@ func (s *Scheduler) syncResourceRankingRedis() error {
 		ResourceRankingCacheKey("comments"):  {},
 		ResourceRankingCacheKey("views"):     {},
 	}
-	pipe := utils.RDB.Pipeline()
+	snapshots := make(map[string]map[string]float64, len(keys))
 	for _, item := range items {
 		member := strconv.FormatInt(item.ID, 10)
 		for key, score := range map[string]float64{
@@ -214,10 +232,10 @@ func (s *Scheduler) syncResourceRankingRedis() error {
 			ResourceRankingCacheKey("comments"):  item.Comments,
 			ResourceRankingCacheKey("views"):     item.Views,
 		} {
-			pipe.ZAdd(utils.Ctx, key, redis.Z{Score: score, Member: member})
+			addSnapshotMember(snapshots, key, member, score)
 		}
 	}
-	if _, err := pipe.Exec(utils.Ctx); err != nil {
+	if err := syncSortedSetSnapshots(snapshots); err != nil {
 		return err
 	}
 	return expireRedisKeys(keys)
@@ -312,4 +330,53 @@ func deleteKeysByPattern(pattern string) error {
 			return nil
 		}
 	}
+}
+
+func addSnapshotMember(snapshots map[string]map[string]float64, key, member string, score float64) {
+	if snapshots[key] == nil {
+		snapshots[key] = make(map[string]float64)
+	}
+	snapshots[key][member] = score
+}
+
+func syncSortedSetSnapshots(snapshots map[string]map[string]float64) error {
+	for key, members := range snapshots {
+		if err := syncSortedSetSnapshot(key, members); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func syncSortedSetSnapshot(key string, members map[string]float64) error {
+	existingMembers, err := utils.RDB.ZRange(utils.Ctx, key, 0, -1).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return err
+	}
+
+	existingSet := make(map[string]struct{}, len(existingMembers))
+	for _, member := range existingMembers {
+		existingSet[member] = struct{}{}
+	}
+
+	pipe := utils.RDB.Pipeline()
+	if len(members) > 0 {
+		zs := make([]redis.Z, 0, len(members))
+		for member, score := range members {
+			zs = append(zs, redis.Z{Score: score, Member: member})
+			delete(existingSet, member)
+		}
+		pipe.ZAdd(utils.Ctx, key, zs...)
+	}
+
+	if len(existingSet) > 0 {
+		staleMembers := make([]interface{}, 0, len(existingSet))
+		for member := range existingSet {
+			staleMembers = append(staleMembers, member)
+		}
+		pipe.ZRem(utils.Ctx, key, staleMembers...)
+	}
+
+	_, err = pipe.Exec(utils.Ctx)
+	return err
 }

@@ -2,6 +2,7 @@ package router
 
 import (
 	"csu-star-backend/internal/handler"
+	middlewarepackage "csu-star-backend/internal/middleware"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/internal/service"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	r := gin.Default()
+	r.Use(middlewarepackage.CORS())
 
 	// 初始化repo
 	userRepo := repo.NewUserRepository(db)

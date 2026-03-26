@@ -87,7 +87,7 @@ func (h *CourseHandler) GetCourseRankings(c *gin.Context) {
 }
 
 func (h *CourseHandler) GetCourseEvaluations(c *gin.Context) {
-	courseID, err := strconv.ParseInt(c.Param("course_id"), 10, 64)
+	courseID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || courseID <= 0 {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
@@ -123,7 +123,7 @@ func (h *CourseHandler) GetCourseEvaluations(c *gin.Context) {
 }
 
 func (h *CourseHandler) CreateCourseEvaluation(c *gin.Context) {
-	courseID, err := strconv.ParseInt(c.Param("course_id"), 10, 64)
+	courseID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || courseID <= 0 {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return

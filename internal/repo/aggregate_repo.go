@@ -6,7 +6,11 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+const pgBulkInsertBatchSize = 1000
+const rankingTopN = 100
 
 type AggregateRepository interface {
 	RefreshTeacherStats() error
@@ -103,10 +107,6 @@ func (r *aggregateRepository) RefreshResourceStats() error {
 }
 
 func (r *aggregateRepository) RefreshTeacherRankings(period string, since *time.Time) error {
-	if err := r.db.Where("period = ?", period).Delete(&model.TeacherRankings{}).Error; err != nil {
-		return err
-	}
-
 	type row struct {
 		TeacherID    int64
 		DepartmentID int16
@@ -161,7 +161,6 @@ func (r *aggregateRepository) RefreshTeacherRankings(period string, since *time.
 		"eval_count":     func(v row) float64 { return v.EvalCnt },
 	}
 
-	batch := make([]model.TeacherRankings, 0, len(rows)*len(dimensions))
 	for dimension, scoreFn := range dimensions {
 		sortedRows := append([]row(nil), rows...)
 		sort.SliceStable(sortedRows, func(i, j int) bool {
@@ -170,7 +169,12 @@ func (r *aggregateRepository) RefreshTeacherRankings(period string, since *time.
 			}
 			return scoreFn(sortedRows[i]) > scoreFn(sortedRows[j])
 		})
-		for i, item := range sortedRows {
+
+		limit := minInt(len(sortedRows), rankingTopN)
+		batch := make([]model.TeacherRankings, 0, limit)
+		keepTeacherIDs := make([]int64, 0, limit)
+		for i := 0; i < limit; i++ {
+			item := sortedRows[i]
 			batch = append(batch, model.TeacherRankings{
 				TeacherID:    item.TeacherID,
 				DepartmentID: item.DepartmentID,
@@ -179,23 +183,20 @@ func (r *aggregateRepository) RefreshTeacherRankings(period string, since *time.
 				Rank:         i + 1,
 				Score:        scoreFn(item),
 			})
+			keepTeacherIDs = append(keepTeacherIDs, item.TeacherID)
+		}
+
+		if err := r.upsertTeacherRankings(period, dimension, batch, keepTeacherIDs); err != nil {
+			return err
 		}
 	}
-
-	if len(batch) == 0 {
-		return nil
-	}
-	return r.db.Create(&batch).Error
+	return nil
 }
 
 func (r *aggregateRepository) RefreshCourseRankings(period string, since *time.Time) error {
-	if err := r.db.Where("period = ?", period).Delete(&model.CourseRankings{}).Error; err != nil {
-		return err
-	}
-
 	type row struct {
 		CourseID      int64
-		DepartmentID  int16
+		DepartmentID  *int16
 		AvgScore      float64
 		AvgHomework   float64
 		AvgGain       float64
@@ -242,7 +243,6 @@ func (r *aggregateRepository) RefreshCourseRankings(period string, since *time.T
 		"hot":            func(v row) float64 { return v.HotScore },
 	}
 
-	batch := make([]model.CourseRankings, 0, len(rows)*len(dimensions))
 	for dimension, scoreFn := range dimensions {
 		sortedRows := append([]row(nil), rows...)
 		sort.SliceStable(sortedRows, func(i, j int) bool {
@@ -251,7 +251,12 @@ func (r *aggregateRepository) RefreshCourseRankings(period string, since *time.T
 			}
 			return scoreFn(sortedRows[i]) > scoreFn(sortedRows[j])
 		})
-		for i, item := range sortedRows {
+
+		limit := minInt(len(sortedRows), rankingTopN)
+		batch := make([]model.CourseRankings, 0, limit)
+		keepCourseIDs := make([]int64, 0, limit)
+		for i := 0; i < limit; i++ {
+			item := sortedRows[i]
 			batch = append(batch, model.CourseRankings{
 				CourseID:     item.CourseID,
 				DepartmentID: item.DepartmentID,
@@ -260,13 +265,14 @@ func (r *aggregateRepository) RefreshCourseRankings(period string, since *time.T
 				Rank:         i + 1,
 				Score:        scoreFn(item),
 			})
+			keepCourseIDs = append(keepCourseIDs, item.CourseID)
+		}
+
+		if err := r.upsertCourseRankings(period, dimension, batch, keepCourseIDs); err != nil {
+			return err
 		}
 	}
-
-	if len(batch) == 0 {
-		return nil
-	}
-	return r.db.Create(&batch).Error
+	return nil
 }
 
 func (r *aggregateRepository) SyncHotKeywords(period string, keywords map[string]float64) error {
@@ -284,7 +290,7 @@ func (r *aggregateRepository) SyncHotKeywords(period string, keywords map[string
 			Count:   int(count),
 		})
 	}
-	return r.db.Create(&items).Error
+	return r.db.CreateInBatches(items, pgBulkInsertBatchSize).Error
 }
 
 func (r *aggregateRepository) TrimSearchHistories(limit int) error {
@@ -304,4 +310,57 @@ func (r *aggregateRepository) TrimSearchHistories(limit int) error {
 			WHERE rn > ?
 		)
 	`, limit).Error
+}
+
+func (r *aggregateRepository) upsertTeacherRankings(period, dimension string, batch []model.TeacherRankings, keepTeacherIDs []int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if len(batch) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "teacher_id"},
+					{Name: "period"},
+					{Name: "dimension"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{"department_id", "rank", "score", "updated_at"}),
+			}).CreateInBatches(batch, pgBulkInsertBatchSize).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanup := tx.Where("period = ? AND dimension = ?", period, dimension)
+		if len(keepTeacherIDs) > 0 {
+			cleanup = cleanup.Where("teacher_id NOT IN ?", keepTeacherIDs)
+		}
+		return cleanup.Delete(&model.TeacherRankings{}).Error
+	})
+}
+
+func (r *aggregateRepository) upsertCourseRankings(period, dimension string, batch []model.CourseRankings, keepCourseIDs []int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if len(batch) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "course_id"},
+					{Name: "period"},
+					{Name: "dimension"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{"department_id", "rank", "score", "updated_at"}),
+			}).CreateInBatches(batch, pgBulkInsertBatchSize).Error; err != nil {
+				return err
+			}
+		}
+
+		cleanup := tx.Where("period = ? AND dimension = ?", period, dimension)
+		if len(keepCourseIDs) > 0 {
+			cleanup = cleanup.Where("course_id NOT IN ?", keepCourseIDs)
+		}
+		return cleanup.Delete(&model.CourseRankings{}).Error
+	})
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

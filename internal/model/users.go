@@ -99,7 +99,7 @@ type Users struct {
 	EmailVerified     bool           `gorm:"type:boolean;default:false" json:"email_verified"`
 	Points            int            `gorm:"type:integer;default:5" json:"points"`
 	FreeDownloadCount int            `gorm:"type:integer;default:3" json:"free_download_count"`
-	InviterID         int64          `gorm:"type:bigint" json:"inviter_id"`
+	InviterID         *int64         `gorm:"type:bigint" json:"inviter_id"`
 	LastLoginAt       time.Time      `gorm:"type:timestamptz" json:"last_login_at"`
 	Metadata          datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	CreatedAt         time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
