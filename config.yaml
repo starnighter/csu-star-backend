@@ -10,7 +10,7 @@ server:
   read_header_timeout_sec: 5
 
 database:
-  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star port=5432 sslmode=disable TimeZone=Asia/Shanghai"
   max_open_conns: 40
   max_idle_conns: 20
   conn_max_lifetime_min: 30
