@@ -21,7 +21,7 @@ func NewDepartmentHandler(svc *service.DepartmentService) *DepartmentHandler {
 func (h *DepartmentHandler) GetAllDepartments(c *gin.Context) {
 	departments, err := h.departmentService.GetAllDepartments()
 	if err != nil {
-		resp.FailWithCode(c, http.StatusInternalServerError, constant.QueryDepartmentsFailedErr.Code, constant.QueryDepartmentsFailedErr.Msg)
+		failWithCodeAndLog(c, err, http.StatusInternalServerError, constant.QueryDepartmentsFailedErr.Code, constant.QueryDepartmentsFailedErr.Msg)
 		return
 	}
 

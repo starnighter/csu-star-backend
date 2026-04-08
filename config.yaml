@@ -4,11 +4,20 @@ app:
 
 server:
   port: 8080
+  read_timeout_sec: 10
+  write_timeout_sec: 30
+  idle_timeout_sec: 60
+  read_header_timeout_sec: 5
 
 database:
   dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+  max_open_conns: 40
+  max_idle_conns: 20
+  conn_max_lifetime_min: 30
+  conn_max_idle_time_min: 10
 
 redis:
+  username: "default"
   addr: "localhost:6379"
   password: "your_redis_password"
   db: 0
@@ -17,6 +26,9 @@ jwt:
   secret: "your_jwt_secret_key"
   access_expiration: 3600
   refresh_expiration: 604800
+
+security:
+  mode: "enforce"
 
 snowflake:
   nodeID: 1

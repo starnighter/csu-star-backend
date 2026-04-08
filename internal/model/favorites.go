@@ -34,9 +34,9 @@ func (f *FavoriteTargetType) Scan(src interface{}) error {
 }
 
 type Favorites struct {
-	ID         int64              `gorm:"primary_key" json:"id"`
-	UserID     int64              `gorm:"type:bigint;not null" json:"user_id"`
+	ID         int64              `gorm:"primary_key" json:"id,string"`
+	UserID     int64              `gorm:"type:bigint;not null" json:"user_id,string"`
 	TargetType FavoriteTargetType `gorm:"type:favorite_target_type;not null" json:"target_type"`
-	TargetID   int64              `gorm:"type:bigint;not null" json:"target_id"`
+	TargetID   int64              `gorm:"type:bigint;not null" json:"target_id,string"`
 	CreatedAt  time.Time          `gorm:"type:autoCreateTime" json:"created_at"`
 }

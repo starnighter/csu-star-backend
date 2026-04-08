@@ -19,6 +19,8 @@ type AuthHandler struct {
 	oauthSvc *service.OauthService
 }
 
+var getTokenRemainingTime = utils.GetTokenRemainingTime
+
 func NewAuthHandler(authSvc *service.AuthService, oauthSvc *service.OauthService) *AuthHandler {
 	return &AuthHandler{
 		authSvc:  authSvc,
@@ -34,12 +36,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	err := h.authSvc.Register(r.Email, r.Password, r.Nickname, r.AvatarUrl, r.InviteCode)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.InviteCodeNotExistErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.InviteCodeNotExistErr.Code, constant.InviteCodeNotExistErr.Msg)
 		return
 	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -52,14 +58,22 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
-
-	err := h.authSvc.SendCaptcha(r.Email)
+	_, isNotExists := c.Get(constant.GinUserID)
+	err := h.authSvc.SendCaptcha(r.Email, isNotExists)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.SendCaptchaRepeatedlyIn60sErr) {
 		resp.FailWithCode(c, http.StatusTooManyRequests, constant.SendCaptchaRepeatedlyIn60sErr.Code, constant.SendCaptchaRepeatedlyIn60sErr.Msg)
 		return
 	}
+	if errors.Is(err, &constant.UserHasRegisteredErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.UserHasRegisteredErr.Code, constant.UserHasRegisteredErr.Msg)
+		return
+	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -74,12 +88,16 @@ func (h *AuthHandler) VerifyCaptcha(c *gin.Context) {
 	}
 
 	err := h.authSvc.VerifyCaptcha(r.Email, r.Captcha)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.CaptchaNotMatchErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.CaptchaNotMatchErr.Code, constant.CaptchaNotMatchErr.Msg)
 		return
 	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -94,6 +112,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	user, accessToken, refreshToken, err := h.authSvc.Login(r.Email, r.Password)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.UserNotExistErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
 		return
@@ -107,25 +129,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
-	u := resp.UserProfileResp{
-		ID:                strconv.FormatInt(user.ID, 10),
-		Nickname:          user.Nickname,
-		AvatarUrl:         user.AvatarUrl,
-		Role:              string(user.Role),
-		EmailVerified:     user.EmailVerified,
-		FreeDownloadCount: strconv.Itoa(user.FreeDownloadCount),
-	}
-
-	remaining, err := utils.GetTokenRemainingTime(accessToken)
-	respData := resp.LoginResp{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    strconv.FormatInt(remaining, 10),
-		UserProfile:  u,
+	respData, err := buildLoginResp(user, accessToken, refreshToken)
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
 	}
 
 	resp.Success(c, respData)
@@ -141,8 +152,24 @@ func (h *AuthHandler) BindEmail(c *gin.Context) {
 		return
 	}
 
-	err := h.authSvc.BindEmail(userID, r.Email)
+	err := h.authSvc.VerifyCaptcha(r.Email, r.Captcha)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
+	if errors.Is(err, &constant.CaptchaNotMatchErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.CaptchaNotMatchErr.Code, constant.CaptchaNotMatchErr.Msg)
+		return
+	}
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	err = h.authSvc.BindEmail(userID, r.Email)
 	switch {
+	case errors.Is(err, &constant.InvalidSchoolEmailErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
 	case errors.Is(err, &constant.UserNotExistErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
 		return
@@ -153,7 +180,7 @@ func (h *AuthHandler) BindEmail(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.EmailHasBeenBoundErr.Code, constant.EmailHasBeenBoundErr.Msg)
 		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -167,7 +194,7 @@ func (h *AuthHandler) OauthLogin(c *gin.Context) {
 		return
 	}
 
-	user, accessToken, refreshToken, err := h.oauthSvc.OauthLogin(model.OauthProvider(r.Provider), r.Code)
+	user, accessToken, refreshToken, err := h.oauthSvc.OauthLogin(model.OauthProvider(r.Provider), r.Code, r.Meta.CodeVerifier)
 	switch {
 	case errors.Is(err, &constant.LoginByQQFailedErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByQQFailedErr.Code, constant.LoginByQQFailedErr.Msg)
@@ -185,25 +212,14 @@ func (h *AuthHandler) OauthLogin(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusForbidden, constant.UserBannedErr.Code, constant.UserBannedErr.Msg)
 		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
-	u := resp.UserProfileResp{
-		ID:                strconv.FormatInt(user.ID, 10),
-		Nickname:          user.Nickname,
-		AvatarUrl:         user.AvatarUrl,
-		Role:              string(user.Role),
-		EmailVerified:     user.EmailVerified,
-		FreeDownloadCount: strconv.Itoa(user.FreeDownloadCount),
-	}
-
-	remaining, err := utils.GetTokenRemainingTime(accessToken)
-	respData := resp.LoginResp{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    strconv.FormatInt(remaining, 10),
-		UserProfile:  u,
+	respData, err := buildLoginResp(user, accessToken, refreshToken)
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
 	}
 
 	resp.Success(c, respData)
@@ -218,7 +234,7 @@ func (h *AuthHandler) OauthBind(c *gin.Context) {
 		return
 	}
 
-	userOauthBinding, err := h.oauthSvc.OauthBind(userID, model.OauthProvider(r.Provider), r.Code)
+	userOauthBinding, err := h.oauthSvc.OauthBind(userID, model.OauthProvider(r.Provider), r.Code, r.Meta.CodeVerifier)
 	switch {
 	case errors.Is(err, &constant.LoginByQQFailedErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByQQFailedErr.Code, constant.LoginByQQFailedErr.Msg)
@@ -232,8 +248,11 @@ func (h *AuthHandler) OauthBind(c *gin.Context) {
 	case errors.Is(err, &constant.LoginByGoogleFailedErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.LoginByGoogleFailedErr.Code, constant.LoginByGoogleFailedErr.Msg)
 		return
+	case errors.Is(err, &constant.OauthHasBeenBoundErr):
+		resp.FailWithCode(c, http.StatusConflict, constant.OauthHasBeenBoundErr.Code, constant.OauthHasBeenBoundErr.Msg)
+		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -252,9 +271,19 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.authSvc.Refresh(r.RefreshToken)
+	accessToken, refreshToken, banDecision, err := h.authSvc.Refresh(r.RefreshToken)
 	if errors.Is(err, &constant.RefreshTokenExpiredErr) {
 		resp.FailWithCode(c, http.StatusUnauthorized, constant.RefreshTokenExpiredErr.Code, constant.RefreshTokenExpiredErr.Msg)
+		return
+	}
+	if errors.Is(err, &constant.UserBannedErr) {
+		code := constant.UserBannedErr.Code
+		msg := constant.UserBannedErr.Msg
+		if banDecision != nil && banDecision.BanSource == model.UserBanSourceSystem {
+			code = constant.UserAutoBannedErr.Code
+			msg = constant.UserAutoBannedErr.Msg
+		}
+		resp.FailWithData(c, http.StatusForbidden, code, msg, service.BuildRiskData(banDecision))
 		return
 	}
 	if err != nil {
@@ -264,7 +293,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	remainingTime, err := utils.GetTokenRemainingTime(accessToken)
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -283,7 +312,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	err := h.authSvc.Logout(tokenHash)
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -298,6 +327,10 @@ func (h *AuthHandler) ForgetPwd(c *gin.Context) {
 	}
 
 	err := h.authSvc.ForgetPwd(r.Email, r.Captcha, r.Password)
+	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.UserNotExistErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
 		return
@@ -307,9 +340,30 @@ func (h *AuthHandler) ForgetPwd(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
 	resp.SuccessMsg(c, "修改密码成功，请重新登录！")
+}
+
+func buildLoginResp(user *model.Users, accessToken, refreshToken string) (resp.LoginResp, error) {
+	remaining, err := getTokenRemainingTime(accessToken)
+	if err != nil {
+		return resp.LoginResp{}, err
+	}
+
+	return resp.LoginResp{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    strconv.FormatInt(remaining, 10),
+		UserProfile: resp.UserProfileResp{
+			ID:                strconv.FormatInt(user.ID, 10),
+			Nickname:          user.Nickname,
+			AvatarUrl:         user.AvatarUrl,
+			Role:              string(user.Role),
+			EmailVerified:     user.EmailVerified,
+			FreeDownloadCount: strconv.Itoa(user.FreeDownloadCount),
+		},
+	}, nil
 }

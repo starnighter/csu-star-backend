@@ -58,21 +58,30 @@ func (s *CommentService) ListComments(targetType model.CommentTargetType, target
 		return nil, 0, err
 	}
 	if userID > 0 && s.socialRepo != nil {
-		for i := range items {
-			liked, err := s.socialRepo.HasLike(userID, model.LikeTargetTypeComment, items[i].ID)
-			if err != nil {
-				return nil, 0, err
+		commentIDs := make([]int64, 0, len(items))
+		replyIDs := make([]int64, 0, len(items))
+		for _, item := range items {
+			commentIDs = append(commentIDs, item.ID)
+			for _, reply := range item.Replies {
+				replyIDs = append(replyIDs, reply.ID)
 			}
-			items[i].IsLiked = liked
+		}
+		commentLikes, err := s.socialRepo.ListLikedTargetIDs(userID, model.LikeTargetTypeComment, commentIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		replyLikes, err := s.socialRepo.ListLikedTargetIDs(userID, model.LikeTargetTypeComment, replyIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range items {
+			items[i].IsLiked = commentLikes[items[i].ID]
 			for j := range items[i].Replies {
-				liked, err := s.socialRepo.HasLike(userID, model.LikeTargetTypeComment, items[i].Replies[j].ID)
-				if err != nil {
-					return nil, 0, err
-				}
-				items[i].Replies[j].IsLiked = liked
+				items[i].Replies[j].IsLiked = replyLikes[items[i].Replies[j].ID]
 			}
 		}
 	}
+	s.normalizeCommentUsers(items)
 	return items, total, nil
 }
 
@@ -97,7 +106,7 @@ func (s *CommentService) CreateComment(userID int64, targetType model.CommentTar
 		if parent.TargetType != targetType || parent.TargetID != targetID || parent.Status != model.CommentStatusActive {
 			return nil, ErrCommentReplyInvalid
 		}
-		if parent.ParentID > 0 {
+		if commentIDValue(parent.ParentID) > 0 {
 			return nil, ErrCommentReplyInvalid
 		}
 	}
@@ -116,7 +125,7 @@ func (s *CommentService) CreateComment(userID int64, targetType model.CommentTar
 		if parent == nil {
 			return nil, ErrCommentReplyInvalid
 		}
-		if replyTo.ID != parent.ID && replyTo.ParentID != parent.ID {
+		if replyTo.ID != parent.ID && commentIDValue(replyTo.ParentID) != parent.ID {
 			return nil, ErrCommentReplyInvalid
 		}
 	} else if parent != nil {
@@ -127,8 +136,8 @@ func (s *CommentService) CreateComment(userID int64, targetType model.CommentTar
 		TargetType:       targetType,
 		TargetID:         targetID,
 		UserID:           userID,
-		ParentID:         parentID,
-		ReplyToCommentID: replyToCommentID,
+		ParentID:         nullableCommentID(parentID),
+		ReplyToCommentID: nullableCommentID(replyToCommentID),
 		Content:          content,
 		Status:           model.CommentStatusActive,
 	}
@@ -155,20 +164,59 @@ func (s *CommentService) CreateComment(userID int64, targetType model.CommentTar
 	var notification *model.Notifications
 	if recipientID > 0 && recipientID != userID && s.socialRepo != nil {
 		notification = &model.Notifications{
-			UserID:   recipientID,
-			Type:     model.NotificationTypeCommented,
-			Title:    title,
-			Content:  contentText,
-			IsRead:   false,
-			IsGlobal: false,
+			UserID:    recipientID,
+			Type:      model.NotificationTypeCommented,
+			Category:  model.NotificationCategoryInteraction,
+			Result:    model.NotificationResultInform,
+			Title:     title,
+			Content:   contentText,
+			IsRead:    false,
+			IsGlobal:  false,
+			RelatedID: targetID,
+			Metadata:  buildInteractionMetadata(string(targetType), targetID, buildResourceInteractionRoute(targetID)),
 		}
 	}
 
 	if err := s.commentRepo.CreateCommentWithEffects(comment, notification); err != nil {
 		return nil, err
 	}
+	if targetType == model.CommentTargetTypeResource {
+	}
 
-	return s.commentRepo.GetCommentDetailByID(comment.ID)
+	item, err := s.commentRepo.GetCommentDetailByID(comment.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.normalizeCommentItem(item)
+	return item, nil
+}
+
+func (s *CommentService) UpdateComment(userID int64, commentID int64, content string) (*repo.CommentListItem, error) {
+	comment, err := s.commentRepo.GetCommentByID(commentID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrCommentNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if comment.Status != model.CommentStatusActive {
+		return nil, ErrCommentNotFound
+	}
+	if comment.UserID != userID {
+		return nil, ErrCommentForbidden
+	}
+	if err := s.commentRepo.UpdateCommentContent(commentID, content); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrCommentNotFound
+		}
+		return nil, err
+	}
+	item, err := s.commentRepo.GetCommentDetailByID(commentID)
+	if err != nil {
+		return nil, err
+	}
+	s.normalizeCommentItem(item)
+	return item, nil
 }
 
 func (s *CommentService) DeleteComment(userID int64, userRole string, commentID int64) error {
@@ -182,7 +230,14 @@ func (s *CommentService) DeleteComment(userID int64, userRole string, commentID 
 	if comment.Status != model.CommentStatusActive {
 		return ErrCommentNotFound
 	}
-	if comment.UserID != userID && !isPrivilegedRole(userRole) {
+	allowed := comment.UserID == userID || isPrivilegedRole(userRole)
+	if !allowed && comment.TargetType == model.CommentTargetTypeResource && s.socialRepo != nil {
+		ownerID, err := s.socialRepo.GetResourceOwnerID(comment.TargetID)
+		if err == nil && ownerID == userID {
+			allowed = true
+		}
+	}
+	if !allowed {
 		return ErrCommentForbidden
 	}
 	if err := s.commentRepo.SoftDeleteCommentWithEffects(commentID, comment.TargetID, comment.TargetType == model.CommentTargetTypeResource); err != nil {
@@ -191,7 +246,50 @@ func (s *CommentService) DeleteComment(userID int64, userRole string, commentID 
 		}
 		return err
 	}
+	if comment.TargetType == model.CommentTargetTypeResource {
+	}
 	return nil
+}
+
+func (s *CommentService) normalizeCommentUsers(items []repo.CommentListItem) {
+	for i := range items {
+		s.normalizeCommentItem(&items[i])
+	}
+}
+
+func nullableCommentID(id int64) *int64 {
+	if id <= 0 {
+		return nil
+	}
+	value := id
+	return &value
+}
+
+func commentIDValue(id *int64) int64 {
+	if id == nil {
+		return 0
+	}
+	return *id
+}
+
+func (s *CommentService) normalizeCommentItem(item *repo.CommentListItem) {
+	if item == nil {
+		return
+	}
+	item.User = &repo.UserBrief{
+		ID:        item.UserID,
+		Nickname:  item.AuthorName,
+		AvatarURL: item.AuthorAvatarURL,
+	}
+	if item.ReplyToUserID > 0 {
+		item.ReplyToUser = &repo.UserBrief{
+			ID:       item.ReplyToUserID,
+			Nickname: item.ReplyToUserName,
+		}
+	}
+	for i := range item.Replies {
+		s.normalizeCommentItem(&item.Replies[i])
+	}
 }
 
 func (s *CommentService) targetExists(targetType model.CommentTargetType, targetID int64) (bool, error) {

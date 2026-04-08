@@ -12,6 +12,8 @@ const (
 	LikeTargetTypeResource          LikeTargetType = "resource"
 	LikeTargetTypeTeacherEvaluation LikeTargetType = "teacher_evaluation"
 	LikeTargetTypeCourseEvaluation  LikeTargetType = "course_evaluation"
+	LikeTargetTypeTeacherReply      LikeTargetType = "teacher_evaluation_reply"
+	LikeTargetTypeCourseReply       LikeTargetType = "course_evaluation_reply"
 	LikeTargetTypeComment           LikeTargetType = "comment"
 )
 
@@ -35,9 +37,9 @@ func (l *LikeTargetType) Scan(src interface{}) error {
 }
 
 type Likes struct {
-	ID         int64          `gorm:"primary_key" json:"id"`
-	UserID     int64          `gorm:"type:bigint;not null" json:"user_id"`
+	ID         int64          `gorm:"primary_key" json:"id,string"`
+	UserID     int64          `gorm:"type:bigint;not null" json:"user_id,string"`
 	TargetType LikeTargetType `gorm:"type:like_target_type;not null" json:"target_type"`
-	TargetID   int64          `gorm:"type:bigint;not null" json:"target_id"`
+	TargetID   int64          `gorm:"type:bigint;not null" json:"target_id,string"`
 	CreatedAt  time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
 }

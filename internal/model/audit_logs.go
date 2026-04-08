@@ -17,6 +17,9 @@ const (
 	AuditActionDelete             AuditAction = "delete"
 	AuditActionBan                AuditAction = "ban"
 	AuditActionUnban              AuditAction = "unban"
+	AuditActionAutoViolation      AuditAction = "auto_violation"
+	AuditActionAutoBan            AuditAction = "auto_ban"
+	AuditActionAutoUnban          AuditAction = "auto_unban"
 	AuditActionManualAdjustPoints AuditAction = "manual_adjust_points"
 )
 
@@ -40,11 +43,11 @@ func (a *AuditAction) Scan(src interface{}) error {
 }
 
 type AuditLogs struct {
-	ID         int64          `gorm:"primary_key" json:"id"`
-	OperatorID int64          `gorm:"type:bigint;not null" json:"operator_id"`
+	ID         int64          `gorm:"primary_key" json:"id,string"`
+	OperatorID int64          `gorm:"type:bigint;not null" json:"operator_id,string"`
 	Action     AuditAction    `gorm:"type:audit_action;not null" json:"action"`
 	TargetType string         `gorm:"type:varchar(32);not null" json:"target_type"`
-	TargetID   int64          `gorm:"type:bigint" json:"target_id"`
+	TargetID   int64          `gorm:"type:bigint" json:"target_id,string"`
 	OldValues  datatypes.JSON `gorm:"type:jsonb" json:"old_values"`
 	NewValues  datatypes.JSON `gorm:"type:jsonb" json:"new_values"`
 	Reason     string         `gorm:"type:text" json:"reason"`

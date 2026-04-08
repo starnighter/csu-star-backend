@@ -24,6 +24,9 @@ const (
 	UserStatusActive UserStatus = "active"
 	UserStatusBanned UserStatus = "banned"
 
+	UserBanSourceAdmin  = "admin"
+	UserBanSourceSystem = "system"
+
 	OauthProviderQQ     OauthProvider = "qq"
 	OauthProviderWechat OauthProvider = "wechat"
 	OauthProviderGithub OauthProvider = "github"
@@ -89,17 +92,22 @@ func (o *OauthProvider) Scan(src interface{}) error {
 }
 
 type Users struct {
-	ID                int64          `gorm:"primary_key;autoIncrement:false" json:"id"`
-	Email             string         `gorm:"type:varchar(255)" json:"email"`
+	ID                int64          `gorm:"primary_key;autoIncrement:false" json:"id,string"`
+	Email             *string        `gorm:"type:varchar(255);default:null" json:"email"`
 	Password          string         `gorm:"type:varchar(255)" json:"password"`
 	Nickname          string         `gorm:"type:varchar(64)" json:"nickname"`
 	AvatarUrl         string         `gorm:"type:varchar(500)" json:"avatar_url"`
 	Role              UserRole       `gorm:"type:user_role;default:'user'" json:"role"`
 	Status            UserStatus     `gorm:"type:user_status;default:'active'" json:"status"`
+	BanUntil          *time.Time     `gorm:"type:timestamptz" json:"ban_until"`
+	BanReason         string         `gorm:"type:varchar(255);default:''" json:"ban_reason"`
+	BanSource         string         `gorm:"type:varchar(32);default:''" json:"ban_source"`
+	ViolationCount    int            `gorm:"type:integer;default:0" json:"violation_count"`
+	LastViolationAt   *time.Time     `gorm:"type:timestamptz" json:"last_violation_at"`
 	EmailVerified     bool           `gorm:"type:boolean;default:false" json:"email_verified"`
 	Points            int            `gorm:"type:integer;default:5" json:"points"`
 	FreeDownloadCount int            `gorm:"type:integer;default:3" json:"free_download_count"`
-	InviterID         *int64         `gorm:"type:bigint" json:"inviter_id"`
+	InviterID         *int64         `gorm:"type:bigint" json:"inviter_id,string"`
 	LastLoginAt       time.Time      `gorm:"type:timestamptz" json:"last_login_at"`
 	Metadata          datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	CreatedAt         time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
@@ -107,11 +115,11 @@ type Users struct {
 }
 
 type UserOauthBinding struct {
-	ID        int64          `gorm:"primary_key" json:"id"`
-	UserID    int64          `gorm:"type:bigint;not null" json:"user_id"`
+	ID        int64          `gorm:"primary_key" json:"id,string"`
+	UserID    int64          `gorm:"type:bigint;not null" json:"user_id,string"`
 	Provider  OauthProvider  `gorm:"type:oauth_provider;not null" json:"provider"`
-	OpenID    string         `gorm:"type:varchar(255);not null" json:"open_id"`
-	UnionID   string         `gorm:"type:varchar(255)" json:"union_id"`
+	OpenID    string         `gorm:"column:openid;type:varchar(255);not null" json:"open_id"`
+	UnionID   string         `gorm:"column:unionid;type:varchar(255)" json:"union_id"`
 	BoundAt   time.Time      `gorm:"type:timestamptz;default:CURRENT_TIMESTAMP" json:"bound_at"`
 	Metadata  datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	CreatedAt time.Time      `gorm:"type:autoCreateTime" json:"created_at"`

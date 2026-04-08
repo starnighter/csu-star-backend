@@ -13,8 +13,6 @@ type ResourceType string
 type ResourceStatus string
 
 const (
-	ResourceTypeWord  ResourceType = "word"
-	ResourceTypeExcel ResourceType = "excel"
 	ResourceTypePPT   ResourceType = "ppt"
 	ResourceTypePDF   ResourceType = "pdf"
 	ResourceTypeNotes ResourceType = "notes"
@@ -26,6 +24,7 @@ const (
 	ResourceStatusPending  ResourceStatus = "pending"
 	ResourceStatusApproved ResourceStatus = "approved"
 	ResourceStatusRejected ResourceStatus = "rejected"
+	ResourceStatusDeleted  ResourceStatus = "deleted"
 )
 
 func (r ResourceType) Value() (driver.Value, error) {
@@ -67,29 +66,25 @@ func (r *ResourceStatus) Scan(src interface{}) error {
 }
 
 type Resources struct {
-	ID            int64          `gorm:"primary_key" json:"id"`
+	ID            int64          `gorm:"primary_key" json:"id,string"`
 	Title         string         `gorm:"type:varchar(128);not null" json:"title"`
 	Description   string         `gorm:"type:text" json:"description"`
-	UploaderID    int64          `gorm:"type:bigint;not null" json:"uploader_id"`
-	CourseID      int64          `gorm:"type:bigint;not null" json:"course_id"`
-	Type          ResourceType   `gorm:"type:resource_type;not null" json:"type"`
-	Semester      string         `gorm:"type:varchar(16)" json:"semester"`
+	UploaderID    int64          `gorm:"type:bigint;not null" json:"uploader_id,string"`
+	CourseID      int64          `gorm:"type:bigint;not null" json:"course_id,string"`
+	Type          ResourceType   `gorm:"type:varchar(64);not null" json:"type"`
 	Status        ResourceStatus `gorm:"type:resource_status" json:"status"`
 	DownloadCount int            `gorm:"type:integer;default:0" json:"download_count"`
 	ViewCount     int            `gorm:"type:integer;default:0" json:"view_count"`
 	LikeCount     int            `gorm:"type:integer;default:0" json:"like_count"`
 	CommentCount  int            `gorm:"type:integer;default:0" json:"comment_count"`
-	ReviewerID    int64          `gorm:"type:bigint" json:"reviewer_id"`
-	ReviewAt      time.Time      `gorm:"type:timestamptz" json:"review_at"`
-	ReviewReason  string         `gorm:"type:text" json:"review_reason"`
 	Metadata      datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	CreatedAt     time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt     time.Time      `gorm:"type:autoUpdateTime" json:"updated_at"`
 }
 
 type ResourceTags struct {
-	ID         int64     `gorm:"primary_key" json:"id"`
-	ResourceID int64     `gorm:"type:bigint;not null" json:"resource_id"`
-	TagID      int64     `gorm:"type:bigint;not null" json:"tag_id"`
+	ID         int64     `gorm:"primary_key" json:"id,string"`
+	ResourceID int64     `gorm:"type:bigint;not null" json:"resource_id,string"`
+	TagID      int64     `gorm:"type:bigint;not null" json:"tag_id,string"`
 	CreatedAt  time.Time `gorm:"type:autoCreateTime" json:"created_at"`
 }

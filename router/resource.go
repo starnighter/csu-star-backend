@@ -8,15 +8,17 @@ import (
 )
 
 func SetUpResourceRouter(r *gin.Engine, resourceHandler *handler.ResourceHandler) {
-	r.GET("/resources", resourceHandler.GetResources)
 	r.GET("/resources/:id", middlewarepackage.OptionalJWTAuth(), resourceHandler.GetResourceDetail)
 
 	authGroup := r.Group("")
 	authGroup.Use(middlewarepackage.JWTAuth())
 	{
 		authGroup.POST("/resources", resourceHandler.CreateResource)
-		authGroup.POST("/resources/:id/submit", resourceHandler.SubmitResource)
+		authGroup.POST("/resources/finalize", resourceHandler.FinalizeResourceUpload)
+		authGroup.POST("/resources/abort", resourceHandler.AbortResourceUpload)
+		authGroup.PUT("/resources/:id", resourceHandler.UpdateResource)
+		authGroup.DELETE("/resources/:id", resourceHandler.DeleteResource)
 		authGroup.GET("/resources/:id/download", resourceHandler.DownloadResource)
-		authGroup.GET("/me/uploads", resourceHandler.GetMyUploads)
+		authGroup.GET("/me/resources", resourceHandler.GetMyUploads)
 	}
 }

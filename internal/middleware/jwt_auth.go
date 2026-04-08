@@ -3,7 +3,9 @@ package middlewarepackage
 import (
 	"crypto/md5"
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/resp"
+	"csu-star-backend/internal/service"
 	"csu-star-backend/pkg/utils"
 	"encoding/hex"
 	"errors"
@@ -81,6 +83,26 @@ func authenticateRequest(c *gin.Context, required bool) (*authContext, bool) {
 		resp.FailWithCode(c, http.StatusUnauthorized, resp.CodeFail, "请提供Access Token进行鉴权")
 		c.Abort()
 		return nil, false
+	}
+
+	if securitySvc != nil {
+		_, banDecision, err := securitySvc.EnforceUserAccess(claims.UserID)
+		if err != nil {
+			if errors.Is(err, service.ErrSecurityUserBanned) {
+				code := constant.UserBannedErr.Code
+				msg := constant.UserBannedErr.Msg
+				if banDecision != nil && banDecision.BanSource == model.UserBanSourceSystem {
+					code = constant.UserAutoBannedErr.Code
+					msg = constant.UserAutoBannedErr.Msg
+				}
+				resp.FailWithData(c, http.StatusForbidden, code, msg, service.BuildRiskData(banDecision))
+				c.Abort()
+				return nil, false
+			}
+			resp.Fail(c, constant.InternalServerErr.Error())
+			c.Abort()
+			return nil, false
+		}
 	}
 
 	return &authContext{

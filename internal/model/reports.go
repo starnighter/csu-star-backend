@@ -12,8 +12,11 @@ type ReportStatus string
 
 const (
 	ReportTargetTypeResource          ReportTargetType = "resource"
+	ReportTargetTypeCourse            ReportTargetType = "course"
 	ReportTargetTypeTeacherEvaluation ReportTargetType = "teacher_evaluation"
 	ReportTargetTypeCourseEvaluation  ReportTargetType = "course_evaluation"
+	ReportTargetTypeTeacherReply      ReportTargetType = "teacher_evaluation_reply"
+	ReportTargetTypeCourseReply       ReportTargetType = "course_evaluation_reply"
 	ReportTargetTypeComment           ReportTargetType = "comment"
 
 	ReportStatusPending   ReportStatus = "pending"
@@ -60,15 +63,15 @@ func (r *ReportStatus) Scan(src interface{}) error {
 }
 
 type Reports struct {
-	ID          int64            `gorm:"primary_key" json:"id"`
-	UserID      int64            `gorm:"type:bigint;not null" json:"user_id"`
+	ID          int64            `gorm:"primary_key" json:"id,string"`
+	UserID      int64            `gorm:"type:bigint;not null" json:"user_id,string"`
 	TargetType  ReportTargetType `gorm:"type:report_target_type;not null" json:"target_type"`
-	TargetID    int64            `gorm:"type:bigint;not null" json:"target_id"`
+	TargetID    int64            `gorm:"type:bigint;not null" json:"target_id,string"`
 	Reason      string           `gorm:"type:text;not null" json:"reason"`
 	Description string           `gorm:"type:text" json:"description"`
 	Status      ReportStatus     `gorm:"type:report_status" json:"status"`
-	ProcessorID int64            `gorm:"type:bigint" json:"processor_id"`
-	ProcessAt   time.Time        `gorm:"type:timestamptz" json:"process_at"`
+	ProcessorID *int64           `gorm:"type:bigint" json:"processor_id,omitempty,string"`
+	ProcessAt   *time.Time       `gorm:"type:timestamptz" json:"process_at,omitempty"`
 	ProcessNote string           `gorm:"type:text" json:"process_note"`
 	CreatedAt   time.Time        `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time        `gorm:"type:autoUpdateTime" json:"updated_at"`

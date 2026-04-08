@@ -25,17 +25,24 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	commentRepo := repo.NewCommentRepository(db)
 	socialRepo := repo.NewSocialRepository(db)
 	miscRepo := repo.NewMiscRepository(db)
+	adminRepo := repo.NewAdminRepository(db)
 
 	// 初始化service
+	securitySvc := service.NewSecurityService(db)
 	authSvc := service.NewAuthService(userRepo, invitationRepo)
 	oauthSvc := service.NewOauthService(userRepo, client)
 	departmentSvc := service.NewDepartmentService(departmentRepo)
-	teacherSvc := service.NewTeacherService(teacherRepo, socialRepo)
-	courseSvc := service.NewCourseService(courseRepo, socialRepo)
-	resourceSvc := service.NewResourceService(resourceRepo, courseRepo, socialRepo)
+	teacherSvc := service.NewTeacherService(db, teacherRepo, courseRepo, socialRepo)
+	courseSvc := service.NewCourseService(db, courseRepo, teacherRepo, socialRepo)
+	resourceSvc := service.NewResourceService(db, resourceRepo, courseRepo, socialRepo)
 	commentSvc := service.NewCommentService(commentRepo, teacherRepo, courseRepo, resourceRepo, socialRepo)
-	socialSvc := service.NewSocialService(socialRepo)
-	miscSvc := service.NewMiscService(miscRepo, socialRepo)
+	socialSvc := service.NewSocialService(db, socialRepo, courseRepo, teacherRepo, resourceRepo, commentRepo)
+	miscSvc := service.NewMiscService(db, miscRepo, socialRepo, invitationRepo)
+	adminSvc := service.NewAdminService(db, adminRepo, courseRepo, teacherRepo, commentRepo, socialRepo, resourceRepo)
+	authSvc.SetSecurityService(securitySvc)
+	oauthSvc.SetSecurityService(securitySvc)
+	resourceSvc.SetSecurityService(securitySvc)
+	middlewarepackage.InitSecurityService(securitySvc)
 
 	// 初始化handler
 	authHandler := handler.NewAuthHandler(authSvc, oauthSvc)
@@ -47,6 +54,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	commentHandler := handler.NewCommentHandler(commentSvc)
 	socialHandler := handler.NewSocialHandler(socialSvc)
 	miscHandler := handler.NewMiscHandler(miscSvc)
+	adminHandler := handler.NewAdminHandler(adminSvc)
 
 	SetupAuthRouter(r, authHandler)
 	SetUpDeptRouter(r, departmentHandler)
@@ -57,6 +65,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	SetUpCommentRouter(r, commentHandler)
 	SetUpSocialRouter(r, socialHandler)
 	SetUpMiscRouter(r, miscHandler)
+	SetUpAdminRouter(r, adminHandler)
 
 	return r
 }

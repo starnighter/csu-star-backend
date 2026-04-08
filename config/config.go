@@ -2,6 +2,7 @@ package config
 
 import (
 	"csu-star-backend/logger"
+	"fmt"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -15,6 +16,7 @@ type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
+	Security  SecurityConfig  `mapstructure:"security"`
 	Snowflake SnowflakeConfig `mapstructure:"snowflake"`
 	Tencent   TencentConfig   `mapstructure:"tencent"`
 	Oauth     OauthConfig     `mapstructure:"oauth"`
@@ -26,14 +28,23 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port int `mapstructure:"port"`
+	Port              int `mapstructure:"port"`
+	ReadTimeoutSec    int `mapstructure:"read_timeout_sec"`
+	WriteTimeoutSec   int `mapstructure:"write_timeout_sec"`
+	IdleTimeoutSec    int `mapstructure:"idle_timeout_sec"`
+	ReadHeaderTimeout int `mapstructure:"read_header_timeout_sec"`
 }
 
 type DatabaseConfig struct {
-	DSN string `mapstructure:"dsn"`
+	DSN                string `mapstructure:"dsn"`
+	MaxOpenConns       int    `mapstructure:"max_open_conns"`
+	MaxIdleConns       int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeMin int    `mapstructure:"conn_max_lifetime_min"`
+	ConnMaxIdleTimeMin int    `mapstructure:"conn_max_idle_time_min"`
 }
 
 type RedisConfig struct {
+	Username string `mapstructure:"username"`
 	Addr     string `mapstructure:"addr"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
@@ -43,6 +54,10 @@ type JWTConfig struct {
 	Secret            string `mapstructure:"secret"`
 	AccessExpiration  int64  `mapstructure:"access_expiration"`
 	RefreshExpiration int64  `mapstructure:"refresh_expiration"`
+}
+
+type SecurityConfig struct {
+	Mode string `mapstructure:"mode"`
 }
 
 type SnowflakeConfig struct {
@@ -98,23 +113,27 @@ type GoogleConfig struct {
 	RedirectUri  string `mapstructure:"redirect_uri"`
 }
 
-func Init() {
+func Init() error {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
 		logger.Log.Error("读取配置文件失败：", zap.Error(err))
+		return fmt.Errorf("read config: %w", err)
 	}
 	viper.SetConfigName("config-secret")
 	if err := viper.MergeInConfig(); err != nil {
 		logger.Log.Error("合并配置文件失败：", zap.Error(err))
+		return fmt.Errorf("merge secret config: %w", err)
 	}
 
 	GlobalConfig = &Config{}
 	if err := viper.Unmarshal(GlobalConfig); err != nil {
 		logger.Log.Error("解析配置文件失败：", zap.Error(err))
+		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
 	logger.Log.Info("配置文件加载成功")
+	return nil
 }

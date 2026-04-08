@@ -2,11 +2,12 @@ package task
 
 import (
 	"context"
+	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -22,14 +23,21 @@ const initialRefreshDelay = 15 * time.Second
 type Scheduler struct {
 	db            *gorm.DB
 	aggregateRepo repo.AggregateRepository
+	courseRepo    repo.CourseRepository
+	teacherRepo   repo.TeacherRepository
+	miscRepo      repo.MiscRepository
 	refreshing    atomic.Bool
 	maintaining   atomic.Bool
+	randomizing   atomic.Bool
 }
 
-func NewScheduler(db *gorm.DB, ar repo.AggregateRepository) *Scheduler {
+func NewScheduler(db *gorm.DB, ar repo.AggregateRepository, cr repo.CourseRepository, tr repo.TeacherRepository, mr repo.MiscRepository) *Scheduler {
 	return &Scheduler{
 		db:            db,
 		aggregateRepo: ar,
+		courseRepo:    cr,
+		teacherRepo:   tr,
+		miscRepo:      mr,
 	}
 }
 
@@ -38,6 +46,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 	go s.runTicker(ctx, time.Hour, s.runRefresh)
 	go s.runTicker(ctx, 6*time.Hour, s.runDailyMaintenance)
+	go s.runTicker(ctx, 1*time.Hour, s.runRandomCoursesAndTeachers)
 }
 
 func (s *Scheduler) runTicker(ctx context.Context, interval time.Duration, fn func()) {
@@ -66,6 +75,7 @@ func (s *Scheduler) runInitialTasks(ctx context.Context) {
 
 	s.runDailyMaintenance()
 	s.runRefresh()
+	s.runRandomCoursesAndTeachers()
 }
 
 func (s *Scheduler) runRefresh() {
@@ -113,8 +123,6 @@ func (s *Scheduler) runRefresh() {
 	if err := s.syncResourceRankingRedis(); err != nil {
 		logger.Log.Error("同步资源排行榜缓存失败", zap.Error(err))
 	}
-
-	s.syncHotKeywords()
 }
 
 func (s *Scheduler) runDailyMaintenance() {
@@ -124,10 +132,26 @@ func (s *Scheduler) runDailyMaintenance() {
 	}
 	defer s.maintaining.Store(false)
 
-	if err := s.aggregateRepo.TrimSearchHistories(20); err != nil {
-		logger.Log.Error("清理搜索历史失败", zap.Error(err))
+	if err := s.miscRepo.PurgeExpiredNotifications(time.Now()); err != nil {
+		logger.Log.Error("清理过期通知失败", zap.Error(err))
 	}
-	s.rotateHotKeywordWindows()
+}
+
+func (s *Scheduler) runRandomCoursesAndTeachers() {
+	if !s.randomizing.CompareAndSwap(false, true) {
+		logger.Log.Info("跳过随机课程与教师：上一次随机仍在执行")
+		return
+	}
+	defer s.randomizing.Store(false)
+
+	err := s.SyncRandomCourses()
+	if err != nil {
+		logger.Log.Error("生成随机课程数据失败", zap.Error(err))
+	}
+	err = s.SyncRandomTeachers()
+	if err != nil {
+		logger.Log.Error("生成随机老师数据失败", zap.Error(err))
+	}
 }
 
 func (s *Scheduler) syncTeacherRankingRedis() error {
@@ -193,44 +217,52 @@ func (s *Scheduler) syncCourseRankingRedis() error {
 
 func (s *Scheduler) syncResourceRankingRedis() error {
 	type row struct {
-		ID        int64
-		HotScore  float64
-		Downloads float64
-		Likes     float64
-		Comments  float64
-		Views     float64
+		CourseID      int64
+		ResourceCount float64
+		Downloads     float64
+		Views         float64
+		Likes         float64
+		FavoriteCount float64
+		Comprehensive float64
 	}
 
 	var items []row
-	if err := s.db.Table("resources").
-		Where("status = ?", "approved").
+	if err := s.db.Table("courses").
 		Select(`
-			id,
-			(download_count + like_count + comment_count) AS hot_score,
-			download_count AS downloads,
-			like_count AS likes,
-			comment_count AS comments,
-			view_count AS views`).
+			courses.id AS course_id,
+			COALESCE(courses.resource_count, 0) AS resource_count,
+			COALESCE(courses.download_total, 0) AS downloads,
+			COALESCE(courses.view_total, 0) AS views,
+			COALESCE(courses.like_total, 0) AS likes,
+			COALESCE(courses.resource_favorite_count, 0) AS favorite_count,
+			(
+				COALESCE(courses.resource_count, 0) * 12 +
+				COALESCE(courses.download_total, 0) * 8 +
+				COALESCE(courses.resource_favorite_count, 0) * 5 +
+				COALESCE(courses.like_total, 0)
+			) AS comprehensive`).
 		Scan(&items).Error; err != nil {
 		return err
 	}
 
 	keys := map[string]struct{}{
-		ResourceRankingCacheKey("hot_score"): {},
-		ResourceRankingCacheKey("downloads"): {},
-		ResourceRankingCacheKey("likes"):     {},
-		ResourceRankingCacheKey("comments"):  {},
-		ResourceRankingCacheKey("views"):     {},
+		ResourceRankingCacheKey("comprehensive"):  {},
+		ResourceRankingCacheKey("downloads"):      {},
+		ResourceRankingCacheKey("views"):          {},
+		ResourceRankingCacheKey("likes"):          {},
+		ResourceRankingCacheKey("favorite_count"): {},
+		ResourceRankingCacheKey("resource_count"): {},
 	}
 	snapshots := make(map[string]map[string]float64, len(keys))
 	for _, item := range items {
-		member := strconv.FormatInt(item.ID, 10)
+		member := strconv.FormatInt(item.CourseID, 10)
 		for key, score := range map[string]float64{
-			ResourceRankingCacheKey("hot_score"): item.HotScore,
-			ResourceRankingCacheKey("downloads"): item.Downloads,
-			ResourceRankingCacheKey("likes"):     item.Likes,
-			ResourceRankingCacheKey("comments"):  item.Comments,
-			ResourceRankingCacheKey("views"):     item.Views,
+			ResourceRankingCacheKey("comprehensive"):  item.Comprehensive,
+			ResourceRankingCacheKey("downloads"):      item.Downloads,
+			ResourceRankingCacheKey("views"):          item.Views,
+			ResourceRankingCacheKey("likes"):          item.Likes,
+			ResourceRankingCacheKey("favorite_count"): item.FavoriteCount,
+			ResourceRankingCacheKey("resource_count"): item.ResourceCount,
 		} {
 			addSnapshotMember(snapshots, key, member, score)
 		}
@@ -241,64 +273,63 @@ func (s *Scheduler) syncResourceRankingRedis() error {
 	return expireRedisKeys(keys)
 }
 
-func (s *Scheduler) syncHotKeywords() {
-	for _, period := range []string{"day", "week", "month"} {
-		zs, err := utils.RDB.ZRevRangeWithScores(utils.Ctx, HotKeywordCacheKey(period), 0, 99).Result()
+func (s *Scheduler) SyncRandomCourses() error {
+	ids, err := s.courseRepo.ListRandomCourseIDs(constant.RandCoursesCount)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		if err := utils.RDB.Del(utils.Ctx, constant.CacheRandomCoursesPrefix+"666").Err(); err != nil {
+			return err
+		}
+		return nil
+	}
+	courses, err := s.courseRepo.FindRandomCourses(ids)
+	if err != nil {
+		return err
+	}
+
+	pipe := utils.RDB.Pipeline()
+	pipe.Del(utils.Ctx, constant.CacheRandomCoursesPrefix+"666")
+	for _, item := range courses.Items {
+		jsonItem, err := json.Marshal(item)
 		if err != nil {
-			logger.Log.Error("读取热词缓存失败", zap.String("period", period), zap.Error(err))
-			continue
+			return err
 		}
-
-		keywords := make(map[string]float64, len(zs))
-		for _, item := range zs {
-			keyword, ok := item.Member.(string)
-			if !ok || keyword == "" {
-				continue
-			}
-			keywords[keyword] = item.Score
-		}
-
-		if err := s.aggregateRepo.SyncHotKeywords(period, keywords); err != nil {
-			logger.Log.Error("持久化热词失败", zap.String("period", period), zap.Error(err))
-		}
+		pipe.RPush(utils.Ctx, constant.CacheRandomCoursesPrefix+"666", string(jsonItem))
 	}
-}
-
-func (s *Scheduler) rotateHotKeywordWindows() {
-	now := time.Now()
-	dayMarker := now.Format("2006-01-02")
-	year, week := now.ISOWeek()
-	weekMarker := fmt.Sprintf("%d-%02d", year, week)
-	monthMarker := now.Format("2006-01")
-
-	s.resetHotKeywordWindow("day", dayMarker)
-	s.resetHotKeywordWindow("week", weekMarker)
-	s.resetHotKeywordWindow("month", monthMarker)
-}
-
-func (s *Scheduler) resetHotKeywordWindow(period, marker string) {
-	markerKey := "cache:search:hot:marker:" + period
-	lastMarker, err := utils.RDB.Get(utils.Ctx, markerKey).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		logger.Log.Error("读取热词窗口标记失败", zap.String("period", period), zap.Error(err))
-		return
-	}
-	if errors.Is(err, redis.Nil) {
-		if setErr := utils.RDB.Set(utils.Ctx, markerKey, marker, 45*24*time.Hour).Err(); setErr != nil {
-			logger.Log.Error("初始化热词窗口标记失败", zap.String("period", period), zap.Error(setErr))
-		}
-		return
-	}
-	if lastMarker == marker {
-		return
-	}
-
-	pipe := utils.RDB.TxPipeline()
-	pipe.Del(utils.Ctx, HotKeywordCacheKey(period))
-	pipe.Set(utils.Ctx, markerKey, marker, 45*24*time.Hour)
+	pipe.Expire(utils.Ctx, constant.CacheRandomCoursesPrefix+"666", 2*time.Hour)
 	if _, err := pipe.Exec(utils.Ctx); err != nil {
-		logger.Log.Error("重置热词窗口失败", zap.String("period", period), zap.Error(err))
+		return err
 	}
+	return nil
+}
+
+func (s *Scheduler) SyncRandomTeachers() error {
+	ids := utils.RandUniqueInts(constant.RandTeachersMin, constant.RandTeachersMax, constant.RandTeachersCount)
+	if ids == nil || len(ids) == 0 {
+		ids = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	}
+
+	teachers, err := s.teacherRepo.FindRandomTeachers(ids)
+	if err != nil {
+		return err
+	}
+
+	pipe := utils.RDB.Pipeline()
+	pipe.Del(utils.Ctx, constant.CacheRandomTeachersPrefix+"666")
+	for _, teacher := range teachers.Items {
+		jsonItem, err := json.Marshal(teacher)
+		if err != nil {
+			return err
+		}
+		pipe.RPush(utils.Ctx, constant.CacheRandomTeachersPrefix+"666", string(jsonItem))
+	}
+	pipe.Expire(utils.Ctx, constant.CacheRandomTeachersPrefix+"666", 2*time.Hour)
+	if _, err := pipe.Exec(utils.Ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func expireRedisKeys(keys map[string]struct{}) error {

@@ -58,15 +58,15 @@ func (c *CorrectionStatus) Scan(src interface{}) error {
 }
 
 type Corrections struct {
-	ID             int64                `gorm:"primary_key" json:"id"`
-	UserID         int64                `gorm:"type:bigint;not null" json:"user_id"`
+	ID             int64                `gorm:"primary_key" json:"id,string"`
+	UserID         int64                `gorm:"type:bigint;not null" json:"user_id,string"`
 	TargetType     CorrectionTargetType `gorm:"type:correction_target_type;not null" json:"target_type"`
-	TargetID       int64                `gorm:"type:bigint;not null" json:"target_id"`
+	TargetID       int64                `gorm:"type:bigint;not null" json:"target_id,string"`
 	Field          string               `gorm:"type:varchar(64);not null" json:"field"`
 	SuggestedValue string               `gorm:"type:text" json:"suggested_value"`
 	Status         CorrectionStatus     `gorm:"type:correction_status" json:"status"`
-	ProcessorID    int64                `gorm:"type:bigint" json:"processor_id"`
-	ProcessAt      time.Time            `gorm:"type:timestamptz" json:"process_at"`
+	ProcessorID    *int64               `gorm:"type:bigint" json:"processor_id,omitempty,string"`
+	ProcessAt      *time.Time           `gorm:"type:timestamptz" json:"process_at,omitempty"`
 	ProcessNote    string               `gorm:"type:text" json:"process_note"`
 	CreatedAt      time.Time            `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt      time.Time            `gorm:"type:autoUpdateTime" json:"updated_at"`

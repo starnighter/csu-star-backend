@@ -17,29 +17,38 @@ func CourseRankingCacheKey(rankType, period string) string {
 }
 
 func ResourceRankingCacheKey(rankType string) string {
-	return "cache:ranking:resource:" + rankType
-}
-
-func HotKeywordCacheKey(period string) string {
-	return "search:hot:" + period
+	return "cache:ranking:resource_collection:v2:" + rankType
 }
 
 func ReadRankingIDs(key string, page, size int, isIncreased bool) ([]int64, []float64, int64, error) {
-	total, err := utils.RDB.ZCard(utils.Ctx, key).Result()
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	if total == 0 {
-		return nil, nil, 0, nil
-	}
-
 	start := int64((page - 1) * size)
-	stop := start + int64(size) - 1
 
 	var zs []redis.Z
+	var total int64
+	var err error
 	if isIncreased {
-		zs, err = utils.RDB.ZRangeWithScores(utils.Ctx, key, start, stop).Result()
+		total, err = utils.RDB.ZCount(utils.Ctx, key, "(0", "+inf").Result()
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if total == 0 {
+			return nil, nil, 0, nil
+		}
+		zs, err = utils.RDB.ZRangeByScoreWithScores(utils.Ctx, key, &redis.ZRangeBy{
+			Min:    "(0",
+			Max:    "+inf",
+			Offset: start,
+			Count:  int64(size),
+		}).Result()
 	} else {
+		total, err = utils.RDB.ZCard(utils.Ctx, key).Result()
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if total == 0 {
+			return nil, nil, 0, nil
+		}
+		stop := start + int64(size) - 1
 		zs, err = utils.RDB.ZRevRangeWithScores(utils.Ctx, key, start, stop).Result()
 	}
 	if err != nil {

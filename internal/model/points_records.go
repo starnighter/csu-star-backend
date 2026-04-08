@@ -37,12 +37,12 @@ func (p *PointsType) Scan(src interface{}) error {
 }
 
 type PointsRecords struct {
-	ID        int64      `gorm:"primary_key" json:"id"`
-	UserID    int64      `gorm:"type:bigint;not null" json:"user_id"`
+	ID        int64      `gorm:"primary_key" json:"id,string"`
+	UserID    int64      `gorm:"type:bigint;not null" json:"user_id,string"`
 	Type      PointsType `gorm:"type:points_type;not null" json:"type"`
 	Delta     int        `gorm:"type:integer;not null" json:"delta"`
 	Balance   int        `gorm:"type:integer;not null" json:"balance"`
 	Reason    string     `gorm:"type:text" json:"reason"`
-	RelatedID int64      `gorm:"type:bigint" json:"related_id"`
+	RelatedID int64      `gorm:"type:bigint" json:"related_id,string"`
 	CreatedAt time.Time  `gorm:"type:autoCreateTime" json:"created_at"`
 }

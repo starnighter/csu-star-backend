@@ -15,10 +15,15 @@ Desktop.ini
 *.bak
 
 logs/
+data/
+deploy/
 database/
+scripts/
 docs/
+fix/
 *.log
 tmp/
 temp/
 
 config-secret.yaml
+config-secret.production.example.yaml

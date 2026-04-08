@@ -21,16 +21,36 @@ import (
 type AuthService struct {
 	userRepo       repo.UserRepository
 	invitationRepo repo.InvitationRepository
+	securitySvc    *SecurityService
 }
 
 func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthService {
 	return &AuthService{userRepo: ur, invitationRepo: ir}
 }
 
-func (s *AuthService) SendCaptcha(email string) error {
+func (s *AuthService) SetSecurityService(securitySvc *SecurityService) {
+	s.securitySvc = securitySvc
+}
+
+func (s *AuthService) SendCaptcha(email string, isNotExists bool) error {
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return err
+	}
+
+	if isNotExists {
+		userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
+		if userByEmail != nil {
+			return &constant.UserHasRegisteredErr
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
 	// 检查是否在60s内重复调用
-	stuNumber := GetStuNumberByEmail(email)
-	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaPrefix+stuNumber).Result()
+	stuNumber := GetStuNumberByEmail(normalizedEmail)
+	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaRepeatPrefix+stuNumber).Result()
 	if errors.Is(err, redis.Nil) {
 		result = ""
 	} else if err != nil {
@@ -41,7 +61,7 @@ func (s *AuthService) SendCaptcha(email string) error {
 	}
 
 	// 调用腾讯云SES SDK发送验证码到指定邮箱
-	to := []string{email}
+	to := []string{normalizedEmail}
 	captcha, err := utils.GenerateCaptcha(6)
 	if err != nil {
 		return err
@@ -50,8 +70,13 @@ func (s *AuthService) SendCaptcha(email string) error {
 	if err != nil {
 		return err
 	}
-	// 存入redis防止300s内重复访问并供后续校验
-	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 3000*time.Second).Err(); err != nil {
+
+	// 存入redis防止60s内重复访问并供后续校验
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaRepeatPrefix+stuNumber, captcha, 60*time.Second).Err(); err != nil {
+		return err
+	}
+	// 存验证码，10min有效期
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 600*time.Second).Err(); err != nil {
 		return err
 	}
 
@@ -59,8 +84,14 @@ func (s *AuthService) SendCaptcha(email string) error {
 }
 
 func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
-	stuNumber := GetStuNumberByEmail(email)
-	result, err := utils.RDB.GetDel(utils.Ctx, constant.CaptchaPrefix+stuNumber).Result()
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return err
+	}
+
+	stuNumber := GetStuNumberByEmail(normalizedEmail)
+	captchaKey := constant.CaptchaPrefix + stuNumber
+	result, err := utils.RDB.Get(utils.Ctx, captchaKey).Result()
 	if errors.Is(err, redis.Nil) {
 		return &constant.CaptchaNotMatchErr
 	}
@@ -69,6 +100,9 @@ func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
 	}
 
 	if result == captcha {
+		if err = utils.RDB.Del(utils.Ctx, captchaKey).Err(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -76,6 +110,21 @@ func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
 }
 
 func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode string) error {
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return err
+	}
+
+	userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		userByEmail = nil
+	} else if err != nil {
+		return err
+	}
+	if userByEmail != nil {
+		return &constant.UserHasRegisteredErr
+	}
+
 	hashPassword, err := utils.HashPassword(password)
 	if err != nil {
 		return err
@@ -99,7 +148,7 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 	}
 
 	user := &model.Users{
-		Email:         email,
+		Email:         &normalizedEmail,
 		Password:      hashPassword,
 		Nickname:      nickName,
 		AvatarUrl:     avatarUrl,
@@ -122,6 +171,10 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 			logger.Log.Error("邀请码邀请人不一致", zap.Int64p("expected_inviter_id", inviterID), zap.Int64("actual_inviter_id", consumedInviterID))
 			return &constant.InviteCodeNotExistErr
 		}
+		if err := s.userRepo.RewardInvitee(user.ID); err != nil {
+			logger.Log.Error("使用邀请码创建新用户后，发放被邀请奖励失败：", zap.Error(err))
+			return err
+		}
 		if err := s.userRepo.RewardInviter(consumedInviterID); err != nil {
 			logger.Log.Error("使用邀请码创建新用户后，发放邀请奖励失败：", zap.Error(err))
 			return err
@@ -132,14 +185,28 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 }
 
 func (s *AuthService) Login(email, password string) (*model.Users, string, string, error) {
-	user, err := s.userRepo.FindUserByEmail(email)
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	user, err := s.userRepo.FindUserByEmail(normalizedEmail)
 	if user == nil {
 		return user, "", "", &constant.UserNotExistErr
 	}
 	if err != nil {
 		return user, "", "", err
 	}
-	if user.Status == model.UserStatusBanned {
+	if s.securitySvc != nil {
+		user, banDecision, accessErr := s.securitySvc.EnforceUserAccess(user.ID)
+		if accessErr != nil {
+			if errors.Is(accessErr, ErrSecurityUserBanned) {
+				return user, "", "", &constant.UserBannedErr
+			}
+			return nil, "", "", accessErr
+		}
+		_ = banDecision
+	} else if user.Status == model.UserStatusBanned {
 		return user, "", "", &constant.UserBannedErr
 	}
 	if !utils.CheckPasswordHash(password, user.Password) {
@@ -153,6 +220,11 @@ func (s *AuthService) Login(email, password string) (*model.Users, string, strin
 }
 
 func (s *AuthService) BindEmail(userID int64, email string) error {
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return err
+	}
+
 	user, err := s.userRepo.FindUserByID(userID)
 	if err != nil {
 		return err
@@ -160,11 +232,11 @@ func (s *AuthService) BindEmail(userID int64, email string) error {
 	if user == nil {
 		return &constant.UserNotExistErr
 	}
-	if user.Email != "" {
+	if user.Email != nil && *user.Email != "" {
 		return &constant.EmailIsExistErr
 	}
 
-	err = s.userRepo.UpdateEmailByID(userID, email)
+	err = s.userRepo.UpdateEmailByID(userID, normalizedEmail)
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return &constant.EmailHasBeenBoundErr
 	}
@@ -174,34 +246,55 @@ func (s *AuthService) BindEmail(userID int64, email string) error {
 	return nil
 }
 
-func (s *AuthService) Refresh(refreshToken string) (string, string, error) {
+func (s *AuthService) Refresh(refreshToken string) (string, string, *BanDecision, error) {
 	claims, err := utils.ParseToken(refreshToken)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if claims.Type != "refresh" {
-		return "", "", &constant.NotRefreshTokenErr
+		return "", "", nil, &constant.NotRefreshTokenErr
 	}
 	if claims.ExpiresAt == nil || claims.ExpiresAt.Time.Before(time.Now()) {
-		return "", "", &constant.RefreshTokenExpiredErr
+		return "", "", nil, &constant.RefreshTokenExpiredErr
 	}
 
 	hash := md5.Sum([]byte(refreshToken))
 	tokenHash := hex.EncodeToString(hash[:])
 	isBlacklisted, err := utils.RDB.Get(utils.Ctx, constant.BlackListPrefix+tokenHash).Result()
 	if !errors.Is(err, redis.Nil) && isBlacklisted != "" {
-		return "", "", &constant.RefreshTokenExpiredErr
+		return "", "", nil, &constant.RefreshTokenExpiredErr
 	}
 	if err != nil && !errors.Is(err, redis.Nil) {
-		return "", "", err
+		return "", "", nil, err
+	}
+
+	if s.securitySvc != nil {
+		_, banDecision, accessErr := s.securitySvc.EnforceUserAccess(claims.UserID)
+		if accessErr != nil {
+			if errors.Is(accessErr, ErrSecurityUserBanned) {
+				return "", "", banDecision, &constant.UserBannedErr
+			}
+			return "", "", nil, accessErr
+		}
+	}
+
+	if s.securitySvc == nil {
+		user, findErr := s.userRepo.FindUserByID(claims.UserID)
+		if findErr != nil {
+			return "", "", nil, findErr
+		}
+		if user.Status == model.UserStatusBanned {
+			return "", "", BanDecisionFromUser(user), &constant.UserBannedErr
+		}
 	}
 
 	_, err = utils.RDB.Set(utils.Ctx, constant.BlackListPrefix+tokenHash, time.Now().UnixMilli(), 604800*time.Second).Result()
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 
-	return utils.GenerateTokenPair(claims.UserID, claims.UserRole)
+	accessToken, nextRefreshToken, genErr := utils.GenerateTokenPair(claims.UserID, claims.UserRole)
+	return accessToken, nextRefreshToken, nil, genErr
 }
 
 func (s *AuthService) Logout(tokenHash string) error {
@@ -213,11 +306,16 @@ func (s *AuthService) Logout(tokenHash string) error {
 }
 
 func (s *AuthService) ForgetPwd(email, captcha, password string) error {
-	if err := s.VerifyCaptcha(email, captcha); err != nil {
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
 		return err
 	}
 
-	user, err := s.userRepo.FindUserByEmail(email)
+	if err := s.VerifyCaptcha(normalizedEmail, captcha); err != nil {
+		return err
+	}
+
+	user, err := s.userRepo.FindUserByEmail(normalizedEmail)
 	if user == nil {
 		return &constant.UserNotExistErr
 	}
@@ -234,5 +332,14 @@ func (s *AuthService) ForgetPwd(email, captcha, password string) error {
 }
 
 func GetStuNumberByEmail(email string) string {
-	return strings.TrimSuffix(email, constant.SchoolEmailSuffix)
+	normalized := strings.TrimSpace(strings.ToLower(email))
+	return strings.TrimSuffix(normalized, constant.SchoolEmailSuffix)
+}
+
+func normalizeSchoolEmail(email string) (string, error) {
+	normalized := strings.TrimSpace(strings.ToLower(email))
+	if !strings.HasSuffix(normalized, constant.SchoolEmailSuffix) {
+		return "", &constant.InvalidSchoolEmailErr
+	}
+	return normalized, nil
 }

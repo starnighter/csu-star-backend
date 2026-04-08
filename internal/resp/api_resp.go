@@ -53,3 +53,11 @@ func FailWithCode(c *gin.Context, httpStatus int, code int, msg string) {
 		Data: nil,
 	})
 }
+
+func FailWithData(c *gin.Context, httpStatus int, code int, msg string, data interface{}) {
+	c.JSON(httpStatus, Response{
+		Code: code,
+		Msg:  msg,
+		Data: data,
+	})
+}

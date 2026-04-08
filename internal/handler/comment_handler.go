@@ -63,11 +63,38 @@ func (h *CommentHandler) DeleteComment(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusForbidden, resp.CodeFail, "无权删除该评论")
 		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
 	resp.SuccessMsg(c, "删除评论成功")
+}
+
+func (h *CommentHandler) UpdateComment(c *gin.Context) {
+	commentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || commentID <= 0 {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+	var r req.CommentUpdateReq
+	if err := c.ShouldBindJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+	userID := c.MustGet(constant.GinUserID).(int64)
+	item, err := h.commentSvc.UpdateComment(userID, commentID, r.Content)
+	switch {
+	case errors.Is(err, service.ErrCommentNotFound):
+		resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "评论不存在")
+		return
+	case errors.Is(err, service.ErrCommentForbidden):
+		resp.FailWithCode(c, http.StatusForbidden, resp.CodeFail, "无权修改该评论")
+		return
+	case err != nil:
+		failInternalWithLog(c, err)
+		return
+	}
+	resp.Success(c, item)
 }
 
 func (h *CommentHandler) getCommentsByTarget(c *gin.Context, targetType model.CommentTargetType, param string) {
@@ -93,7 +120,7 @@ func (h *CommentHandler) getCommentsByTarget(c *gin.Context, targetType model.Co
 		resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "目标不存在")
 		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -111,9 +138,25 @@ func (h *CommentHandler) createCommentByTarget(c *gin.Context, targetType model.
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	var parentID int64
+	if r.ParentID != "" {
+		parentID, err = parseStringID(r.ParentID)
+		if err != nil {
+			resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+			return
+		}
+	}
+	var replyToCommentID int64
+	if r.ReplyToCommentID != "" {
+		replyToCommentID, err = parseStringID(r.ReplyToCommentID)
+		if err != nil {
+			resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+			return
+		}
+	}
 	userID := c.MustGet(constant.GinUserID).(int64)
 
-	item, err := h.commentSvc.CreateComment(userID, targetType, targetID, r.Content, r.ParentID, r.ReplyToCommentID)
+	item, err := h.commentSvc.CreateComment(userID, targetType, targetID, r.Content, parentID, replyToCommentID)
 	switch {
 	case errors.Is(err, service.ErrCommentTargetNotFound):
 		resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "目标不存在")
@@ -122,7 +165,7 @@ func (h *CommentHandler) createCommentByTarget(c *gin.Context, targetType model.
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "回复关系无效")
 		return
 	case err != nil:
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 

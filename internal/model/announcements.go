@@ -34,7 +34,7 @@ func (a *AnnouncementType) Scan(src interface{}) error {
 }
 
 type Announcements struct {
-	ID          int64            `gorm:"primary_key" json:"id"`
+	ID          int64            `gorm:"primary_key" json:"id,string"`
 	Title       string           `gorm:"type:varchar(255);not null" json:"title"`
 	Content     string           `gorm:"type:text;not null" json:"content"`
 	Type        AnnouncementType `gorm:"type:announcement_type;not null" json:"type"`

@@ -11,9 +11,9 @@ func SetUpSocialRouter(r *gin.Engine, socialHandler *handler.SocialHandler) {
 	g := r.Group("")
 	g.Use(middlewarepackage.JWTAuth())
 	{
-		g.POST("/likes", socialHandler.Like)
-		g.DELETE("/likes", socialHandler.Unlike)
-		g.POST("/favorites", socialHandler.Favorite)
-		g.DELETE("/favorites", socialHandler.Unfavorite)
+		g.POST("/likes", middlewarepackage.AuthenticatedRateLimit("social_write", 30, 60), socialHandler.Like)
+		g.DELETE("/likes", middlewarepackage.AuthenticatedRateLimit("social_write", 30, 60), socialHandler.Unlike)
+		g.POST("/favorites", middlewarepackage.AuthenticatedRateLimit("social_write", 30, 60), socialHandler.Favorite)
+		g.DELETE("/favorites", middlewarepackage.AuthenticatedRateLimit("social_write", 30, 60), socialHandler.Unfavorite)
 	}
 }

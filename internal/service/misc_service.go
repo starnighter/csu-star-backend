@@ -3,21 +3,29 @@ package service
 import (
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
-	"csu-star-backend/pkg/utils"
 	"encoding/json"
 	"errors"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 var ErrMeNotFound = errors.New("me not found")
 var ErrAlreadyCheckedIn = errors.New("already checked in")
 
+const contributionWeeks = 26
+
+var contributionLocation = loadContributionLocation()
+
 type MiscService struct {
-	miscRepo   repo.MiscRepository
-	socialRepo repo.SocialRepository
+	db             *gorm.DB
+	miscRepo       repo.MiscRepository
+	socialRepo     repo.SocialRepository
+	invitationRepo repo.InvitationRepository
 }
 
-func NewMiscService(mr repo.MiscRepository, sr repo.SocialRepository) *MiscService {
-	return &MiscService{miscRepo: mr, socialRepo: sr}
+func NewMiscService(db *gorm.DB, mr repo.MiscRepository, sr repo.SocialRepository, ir repo.InvitationRepository) *MiscService {
+	return &MiscService{db: db, miscRepo: mr, socialRepo: sr, invitationRepo: ir}
 }
 
 func (s *MiscService) GetMe(userID int64) (*repo.MeProfile, error) {
@@ -25,11 +33,32 @@ func (s *MiscService) GetMe(userID int64) (*repo.MeProfile, error) {
 	if err != nil {
 		return nil, err
 	}
+	item.Role = externalUserRole(item.Role)
 	return item, nil
 }
 
-func (s *MiscService) UpdateMe(userID int64, nickname, avatarURL string) error {
-	return s.miscRepo.UpdateMe(userID, nickname, avatarURL)
+func (s *MiscService) GetMyInviteCode(userID int64) (*repo.InviteCodeInfo, error) {
+	invitation, err := s.invitationRepo.GetOrCreateActiveInvitation(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	usedCount, err := s.invitationRepo.CountUsedInvitations(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &repo.InviteCodeInfo{
+		InviteCode: invitation.Code,
+		UsedCount:  usedCount,
+	}, nil
+}
+
+func (s *MiscService) UpdateMe(userID int64, nickname, avatarURL string, departmentID *int16, grade *int) (*repo.MeProfile, error) {
+	if err := s.miscRepo.UpdateMe(userID, nickname, avatarURL, departmentID, grade); err != nil {
+		return nil, err
+	}
+	return s.GetMe(userID)
 }
 
 func (s *MiscService) DailyCheckin(userID int64) (int, error) {
@@ -55,8 +84,99 @@ func (s *MiscService) ListMyPoints(userID int64, page, size int) ([]repo.PointRe
 	return s.miscRepo.ListMyPoints(userID, page, size)
 }
 
+func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.ContributionSummary, error) {
+	today := startOfContributionDay(time.Now().In(contributionLocation))
+	currentWeekStart := today.AddDate(0, 0, -int(today.Weekday()))
+	start := currentWeekStart.AddDate(0, 0, -(contributionWeeks-1)*7)
+	end := currentWeekStart.AddDate(0, 0, 7)
+
+	events, err := s.miscRepo.ListMyContributionEvents(userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	type daySummary struct {
+		Score   int
+		Actions []repo.ContributionAction
+	}
+
+	byDate := make(map[string]*daySummary, len(events))
+	for _, event := range events {
+		key := contributionDateKey(event.OccurredAt)
+		item := byDate[key]
+		if item == nil {
+			item = &daySummary{}
+			byDate[key] = item
+		}
+		item.Score += event.Score
+		item.Actions = append(item.Actions, repo.ContributionAction{
+			Type:  event.EventType,
+			Label: event.Label,
+			Score: event.Score,
+		})
+	}
+
+	weeks := make([][]repo.ContributionCell, 0, contributionWeeks)
+	totalScore := 0
+	activeDays := 0
+	maxDayScore := 0
+
+	for weekIndex := 0; weekIndex < contributionWeeks; weekIndex += 1 {
+		cells := make([]repo.ContributionCell, 0, 7)
+		for dayIndex := 0; dayIndex < 7; dayIndex += 1 {
+			date := start.AddDate(0, 0, weekIndex*7+dayIndex)
+			dateKey := contributionDateKey(date)
+			day := byDate[dateKey]
+			isFuture := date.After(today)
+			score := 0
+			actions := make([]repo.ContributionAction, 0)
+			if !isFuture && day != nil {
+				score = day.Score
+				actions = append(actions, day.Actions...)
+			}
+			if !isFuture && score > 0 {
+				totalScore += score
+				activeDays += 1
+				if score > maxDayScore {
+					maxDayScore = score
+				}
+			}
+
+			cells = append(cells, repo.ContributionCell{
+				Date:     dateKey,
+				Score:    score,
+				Level:    contributionLevel(score),
+				IsFuture: isFuture,
+				Actions:  actions,
+			})
+		}
+		weeks = append(weeks, cells)
+	}
+
+	currentStreak := 0
+	for cursor := today; ; cursor = cursor.AddDate(0, 0, -1) {
+		day := byDate[contributionDateKey(cursor)]
+		if day == nil || day.Score <= 0 {
+			break
+		}
+		currentStreak += 1
+	}
+
+	return &repo.ContributionSummary{
+		Weeks:         weeks,
+		TotalScore:    totalScore,
+		ActiveDays:    activeDays,
+		CurrentStreak: currentStreak,
+		MaxDayScore:   maxDayScore,
+	}, nil
+}
+
 func (s *MiscService) ListAnnouncements() ([]repo.AnnouncementItem, error) {
 	return s.miscRepo.ListAnnouncements()
+}
+
+func (s *MiscService) GetShowcaseStats() (*repo.ShowcaseStats, error) {
+	return s.miscRepo.GetShowcaseStats()
 }
 
 func (s *MiscService) CreateFeedback(userID int64, feedbackType, title, content string, files []string) error {
@@ -116,33 +236,16 @@ func (s *MiscService) Search(userID int64, q, searchType string, page, size int)
 	if err != nil {
 		return nil, 0, err
 	}
-	if userID > 0 {
-		_ = s.miscRepo.UpsertSearchHistory(userID, q)
-		for _, period := range []string{"day", "week", "month"} {
-			_ = utils.RDB.ZIncrBy(utils.Ctx, "search:hot:"+period, 1, q).Err()
-		}
-	}
 	return items, total, nil
-}
-
-func (s *MiscService) ListSearchHistory(userID int64) ([]model.SearchHistories, error) {
-	return s.miscRepo.ListSearchHistory(userID)
-}
-
-func (s *MiscService) ClearSearchHistory(userID int64) error {
-	return s.miscRepo.ClearSearchHistory(userID)
-}
-
-func (s *MiscService) ListHotKeywords(period string) ([]model.HotKeywords, error) {
-	if period == "" {
-		period = "day"
-	}
-	return s.miscRepo.ListHotKeywords(period)
 }
 
 func (s *MiscService) ListNotifications(userID int64, isRead *bool, page, size int) ([]repo.NotificationItem, int64, error) {
 	fillPagination(&page, &size)
 	return s.miscRepo.ListNotifications(userID, isRead, page, size)
+}
+
+func (s *MiscService) ListHomeNotificationSummary(userID int64) (*repo.HomeNotificationSummary, error) {
+	return s.miscRepo.ListHomeNotificationSummary(userID)
 }
 
 func (s *MiscService) CountUnreadNotifications(userID int64) (int64, error) {
@@ -161,10 +264,16 @@ func (s *MiscService) reportTargetExists(targetType model.ReportTargetType, targ
 	switch targetType {
 	case model.ReportTargetTypeResource:
 		return s.socialRepo.ResourceExists(targetID)
+	case model.ReportTargetTypeCourse:
+		return s.socialRepo.CourseExists(targetID)
 	case model.ReportTargetTypeTeacherEvaluation:
 		return s.socialRepo.TeacherEvaluationExists(targetID)
 	case model.ReportTargetTypeCourseEvaluation:
 		return s.socialRepo.CourseEvaluationExists(targetID)
+	case model.ReportTargetTypeTeacherReply:
+		return s.socialRepo.TeacherEvaluationReplyExists(targetID)
+	case model.ReportTargetTypeCourseReply:
+		return s.socialRepo.CourseEvaluationReplyExists(targetID)
 	case model.ReportTargetTypeComment:
 		return s.socialRepo.CommentExists(targetID)
 	default:
@@ -180,5 +289,38 @@ func (s *MiscService) correctionTargetExists(targetType model.CorrectionTargetTy
 		return s.socialRepo.CourseExists(targetID)
 	default:
 		return false, nil
+	}
+}
+
+func loadContributionLocation() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return location
+}
+
+func startOfContributionDay(t time.Time) time.Time {
+	localTime := t.In(contributionLocation)
+	year, month, day := localTime.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, contributionLocation)
+}
+
+func contributionDateKey(t time.Time) string {
+	return t.In(contributionLocation).Format("2006-01-02")
+}
+
+func contributionLevel(score int) int {
+	switch {
+	case score <= 0:
+		return 0
+	case score < 3:
+		return 1
+	case score < 6:
+		return 2
+	case score < 9:
+		return 3
+	default:
+		return 4
 	}
 }

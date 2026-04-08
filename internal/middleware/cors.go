@@ -9,11 +9,12 @@ import (
 )
 
 var allowedCORSHosts = map[string]struct{}{
-	"localhost":        {},
-	"127.0.0.1":        {},
-	"::1":              {},
-	"csustar.wiki":     {},
-	"www.csustar.wiki": {},
+	"localhost":          {},
+	"127.0.0.1":          {},
+	"::1":                {},
+	"admin.csustar.wiki": {},
+	"csustar.wiki":       {},
+	"www.csustar.wiki":   {},
 }
 
 func CORS() gin.HandlerFunc {

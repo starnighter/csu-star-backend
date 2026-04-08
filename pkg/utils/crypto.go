@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	rand2 "math/rand/v2"
 	"mime/multipart"
 	"net/http"
 	"time"
@@ -145,6 +146,23 @@ func GenerateNickname() (string, error) {
 	return csuPrefix + timePrefix + string(randomSuffix), nil
 }
 
+// GenerateInviteCode 生成随机邀请码
+func GenerateInviteCode() (string, error) {
+	const inviteCharset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const inviteCodeLength = 6
+
+	code := make([]byte, inviteCodeLength)
+	for i := range code {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(inviteCharset))))
+		if err != nil {
+			return "", err
+		}
+		code[i] = inviteCharset[n.Int64()]
+	}
+
+	return string(code), nil
+}
+
 // GenerateCaptcha 生成指定长度的验证码
 func GenerateCaptcha(length int) (string, error) {
 	digits := "0123456789"
@@ -182,4 +200,21 @@ func DetectMimeType(f multipart.File) (string, error) {
 	}
 	// buffer[:n] 防止文件小于 512 字节时读取到空数据
 	return http.DetectContentType(buffer[:n]), nil
+}
+
+// RandUniqueInts生成指定范围内的指定个数数字
+func RandUniqueInts(min, max, count int64) []int64 {
+	if max-min+1 < count {
+		return nil
+	}
+
+	candidates := make([]int64, 0, max-min+1)
+	for i := min; i <= max; i++ {
+		candidates = append(candidates, i)
+	}
+
+	rand2.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+	return candidates[:count]
 }

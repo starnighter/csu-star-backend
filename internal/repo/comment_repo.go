@@ -2,9 +2,11 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"encoding/json"
 	"errors"
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -17,23 +19,25 @@ type CommentListQuery struct {
 }
 
 type CommentListItem struct {
-	ID               int64             `json:"id"`
+	ID               int64             `json:"id,string"`
 	TargetType       string            `json:"target_type"`
-	TargetID         int64             `json:"target_id"`
-	UserID           int64             `json:"user_id"`
-	ParentID         int64             `json:"parent_id"`
-	ReplyToCommentID int64             `json:"reply_to_comment_id"`
+	TargetID         int64             `json:"target_id,string"`
+	UserID           int64             `json:"user_id,string"`
+	User             *UserBrief        `json:"user,omitempty" gorm:"-"`
+	ParentID         int64             `json:"parent_id,string"`
+	ReplyToCommentID int64             `json:"reply_to_comment_id,string"`
 	Content          string            `json:"content"`
 	LikeCount        int               `json:"like_count"`
 	IsLiked          bool              `json:"is_liked"`
 	Status           string            `json:"status"`
 	AuthorName       string            `json:"author_name"`
 	AuthorAvatarURL  string            `json:"author_avatar_url"`
-	ReplyToUserID    int64             `json:"reply_to_user_id"`
+	ReplyToUserID    int64             `json:"reply_to_user_id,string"`
 	ReplyToUserName  string            `json:"reply_to_user_name"`
+	ReplyToUser      *UserBrief        `json:"reply_to_user,omitempty" gorm:"-"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
-	Replies          []CommentListItem `json:"replies,omitempty"`
+	Replies          []CommentListItem `json:"replies,omitempty" gorm:"-"`
 }
 
 type CommentRepository interface {
@@ -42,6 +46,7 @@ type CommentRepository interface {
 	CreateCommentWithEffects(comment *model.Comments, notification *model.Notifications) error
 	GetCommentByID(id int64) (*model.Comments, error)
 	GetCommentDetailByID(id int64) (*CommentListItem, error)
+	UpdateCommentContent(id int64, content string) error
 	SoftDeleteComment(id int64) error
 	SoftDeleteCommentWithEffects(id int64, resourceID int64, updateResourceCount bool) error
 }
@@ -54,28 +59,29 @@ func NewCommentRepository(db *gorm.DB) CommentRepository {
 	return &commentRepository{db: db}
 }
 
+func (r *commentRepository) WithTx(tx *gorm.DB) CommentRepository {
+	return &commentRepository{db: tx}
+}
+
 func (r *commentRepository) ListComments(query CommentListQuery) ([]CommentListItem, int64, error) {
 	var total int64
-	base := r.db.Table("comments").Where(
-		"comments.target_type = ? AND comments.target_id = ? AND comments.status = ?",
-		query.TargetType, query.TargetID, model.CommentStatusActive,
-	)
-
-	topLevel := base.Where("comments.parent_id = 0 OR comments.parent_id IS NULL")
-	if err := topLevel.Count(&total).Error; err != nil {
+	if err := commentListBaseQuery(r.db, query).
+		Where("comments.parent_id = 0 OR comments.parent_id IS NULL").
+		Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	var parents []CommentListItem
-	err := topLevel.
+	err := commentListBaseQuery(r.db, query).
+		Where("comments.parent_id = 0 OR comments.parent_id IS NULL").
 		Joins("JOIN users ON users.id = comments.user_id").
 		Select(`
 			comments.id,
 			comments.target_type,
 			comments.target_id,
 			comments.user_id,
-			comments.parent_id,
-			comments.reply_to_comment_id,
+			COALESCE(comments.parent_id, 0) AS parent_id,
+			COALESCE(comments.reply_to_comment_id, 0) AS reply_to_comment_id,
 			comments.content,
 			comments.like_count,
 			FALSE AS is_liked,
@@ -102,7 +108,8 @@ func (r *commentRepository) ListComments(query CommentListQuery) ([]CommentListI
 	}
 
 	var replies []CommentListItem
-	err = base.Where("comments.parent_id IN ?", parentIDs).
+	err = commentListBaseQuery(r.db, query).
+		Where("comments.parent_id IN ?", parentIDs).
 		Joins("JOIN users ON users.id = comments.user_id").
 		Joins("LEFT JOIN comments AS reply_to ON reply_to.id = comments.reply_to_comment_id").
 		Joins("LEFT JOIN users AS reply_user ON reply_user.id = reply_to.user_id").
@@ -111,8 +118,8 @@ func (r *commentRepository) ListComments(query CommentListQuery) ([]CommentListI
 			comments.target_type,
 			comments.target_id,
 			comments.user_id,
-			comments.parent_id,
-			comments.reply_to_comment_id,
+			COALESCE(comments.parent_id, 0) AS parent_id,
+			COALESCE(comments.reply_to_comment_id, 0) AS reply_to_comment_id,
 			comments.content,
 			comments.like_count,
 			FALSE AS is_liked,
@@ -141,6 +148,13 @@ func (r *commentRepository) ListComments(query CommentListQuery) ([]CommentListI
 	return parents, total, nil
 }
 
+func commentListBaseQuery(db *gorm.DB, query CommentListQuery) *gorm.DB {
+	return db.Table("comments").Where(
+		"comments.target_type = ? AND comments.target_id = ? AND comments.status = ?",
+		query.TargetType, query.TargetID, model.CommentStatusActive,
+	)
+}
+
 func (r *commentRepository) CreateComment(comment *model.Comments) error {
 	return r.db.Create(comment).Error
 }
@@ -154,11 +168,7 @@ func (r *commentRepository) CreateCommentWithEffects(comment *model.Comments, no
 		if comment.TargetType == model.CommentTargetTypeResource {
 			if err := tx.Model(&model.Resources{}).
 				Where("id = ?", comment.TargetID).
-				Update("comment_count", gorm.Expr(`(
-					SELECT COUNT(*)
-					FROM comments
-					WHERE comments.target_type = ? AND comments.target_id = ? AND comments.status = ?
-				)`, model.CommentTargetTypeResource, comment.TargetID, model.CommentStatusActive)).Error; err != nil {
+				Update("comment_count", gorm.Expr("GREATEST(comment_count + 1, 0)")).Error; err != nil {
 				return err
 			}
 		}
@@ -166,6 +176,9 @@ func (r *commentRepository) CreateCommentWithEffects(comment *model.Comments, no
 		if notification != nil {
 			if notification.RelatedID == 0 {
 				notification.RelatedID = comment.ID
+			}
+			if comment.TargetType == model.CommentTargetTypeResource {
+				notification.Metadata = buildResourceCommentNotificationMetadata(comment)
 			}
 			if err := tx.Create(notification).Error; err != nil {
 				return err
@@ -195,8 +208,8 @@ func (r *commentRepository) GetCommentDetailByID(id int64) (*CommentListItem, er
 			comments.target_type,
 			comments.target_id,
 			comments.user_id,
-			comments.parent_id,
-			comments.reply_to_comment_id,
+			COALESCE(comments.parent_id, 0) AS parent_id,
+			COALESCE(comments.reply_to_comment_id, 0) AS reply_to_comment_id,
 			comments.content,
 			comments.like_count,
 			FALSE AS is_liked,
@@ -216,6 +229,22 @@ func (r *commentRepository) GetCommentDetailByID(id int64) (*CommentListItem, er
 		return nil, gorm.ErrRecordNotFound
 	}
 	return &item, nil
+}
+
+func (r *commentRepository) UpdateCommentContent(id int64, content string) error {
+	result := r.db.Model(&model.Comments{}).
+		Where("id = ? AND status = ?", id, model.CommentStatusActive).
+		Updates(map[string]interface{}{
+			"content":    content,
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *commentRepository) SoftDeleteComment(id int64) error {
@@ -256,11 +285,7 @@ func (r *commentRepository) SoftDeleteCommentWithEffects(id int64, resourceID in
 		if updateResourceCount {
 			if err := tx.Model(&model.Resources{}).
 				Where("id = ?", resourceID).
-				Update("comment_count", gorm.Expr(`(
-					SELECT COUNT(*)
-					FROM comments
-					WHERE comments.target_type = ? AND comments.target_id = ? AND comments.status = ?
-				)`, model.CommentTargetTypeResource, resourceID, model.CommentStatusActive)).Error; err != nil {
+				Update("comment_count", gorm.Expr("GREATEST(comment_count - 1, 0)")).Error; err != nil {
 				return err
 			}
 		}
@@ -278,3 +303,24 @@ func commentSortExpr(sort string) string {
 }
 
 var ErrInvalidCommentReply = errors.New("invalid comment reply")
+
+func buildResourceCommentNotificationMetadata(comment *model.Comments) datatypes.JSON {
+	if comment == nil || comment.TargetType != model.CommentTargetTypeResource || comment.TargetID <= 0 {
+		return datatypes.JSON([]byte("{}"))
+	}
+
+	payload := map[string]interface{}{
+		"source_type": "resource",
+		"source_id":   comment.TargetID,
+		"target_page": "resource",
+		"target_id":   comment.TargetID,
+		"comment_id":  comment.ID,
+	}
+	if comment.ParentID != nil && *comment.ParentID > 0 {
+		payload["comment_id"] = *comment.ParentID
+		payload["reply_id"] = comment.ID
+	}
+
+	raw, _ := json.Marshal(payload)
+	return datatypes.JSON(raw)
+}

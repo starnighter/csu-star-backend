@@ -8,6 +8,10 @@ type CommentListReq struct {
 
 type CommentCreateReq struct {
 	Content          string `json:"content" binding:"required,max=2000"`
-	ParentID         int64  `json:"parent_id" binding:"omitempty,min=1"`
-	ReplyToCommentID int64  `json:"reply_to_comment_id" binding:"omitempty,min=1"`
+	ParentID         string `json:"parent_id" binding:"omitempty"`
+	ReplyToCommentID string `json:"reply_to_comment_id" binding:"omitempty"`
+}
+
+type CommentUpdateReq struct {
+	Content string `json:"content" binding:"required,max=2000"`
 }

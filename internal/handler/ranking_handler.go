@@ -34,14 +34,13 @@ func (h *RankingHandler) GetTeacherRankings(c *gin.Context) {
 
 	items, total, err := h.teacherSvc.ListTeacherRankings(repo.TeacherRankingQuery{
 		RankType:     r.RankType,
-		Period:       r.Period,
 		DepartmentID: r.DepartmentID,
 		Page:         r.Page,
 		Size:         r.Size,
 		IsIncreased:  r.IsIncreased,
 	})
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -57,13 +56,12 @@ func (h *RankingHandler) GetCourseRankings(c *gin.Context) {
 
 	items, total, err := h.courseSvc.ListCourseRankings(repo.CourseRankingQuery{
 		RankType:    r.RankType,
-		Period:      r.Period,
 		Page:        r.Page,
 		Size:        r.Size,
 		IsIncreased: r.IsIncreased,
 	})
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 
@@ -84,7 +82,7 @@ func (h *RankingHandler) GetResourceRankings(c *gin.Context) {
 		IsIncreased: r.IsIncreased,
 	})
 	if err != nil {
-		resp.Fail(c, constant.InternalServerErr.Error())
+		failInternalWithLog(c, err)
 		return
 	}
 

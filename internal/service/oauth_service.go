@@ -9,26 +9,35 @@ import (
 	"csu-star-backend/internal/resp"
 	"csu-star-backend/pkg/utils"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/google"
+	"gorm.io/gorm"
 )
 
 type OauthService struct {
-	userRepo   repo.UserRepository
-	httpClient *http.Client
+	userRepo    repo.UserRepository
+	httpClient  *http.Client
+	securitySvc *SecurityService
 }
 
 func NewOauthService(ur repo.UserRepository, c *http.Client) *OauthService {
 	return &OauthService{userRepo: ur, httpClient: c}
 }
 
-func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*model.Users, string, string, error) {
-	userInfo, err := s.fetchProviderUserInfo(provider, code)
+func (s *OauthService) SetSecurityService(securitySvc *SecurityService) {
+	s.securitySvc = securitySvc
+}
+
+func (s *OauthService) OauthLogin(provider model.OauthProvider, code string, codeVerifier string) (*model.Users, string, string, error) {
+	userInfo, err := s.fetchProviderUserInfo(provider, code, codeVerifier)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -37,7 +46,18 @@ func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*m
 	if err != nil {
 		return nil, "", "", err
 	}
-	if user.Status == model.UserStatusBanned {
+	if s.securitySvc != nil {
+		checkedUser, _, accessErr := s.securitySvc.EnforceUserAccess(user.ID)
+		if accessErr != nil {
+			if errors.Is(accessErr, ErrSecurityUserBanned) {
+				return nil, "", "", &constant.UserBannedErr
+			}
+			return nil, "", "", accessErr
+		}
+		if checkedUser != nil {
+			user = checkedUser
+		}
+	} else if user.Status == model.UserStatusBanned {
 		return nil, "", "", &constant.UserBannedErr
 	}
 
@@ -45,30 +65,50 @@ func (s *OauthService) OauthLogin(provider model.OauthProvider, code string) (*m
 	return user, accessToken, refreshToken, err
 }
 
-func (s *OauthService) OauthBind(userID int64, provider model.OauthProvider, code string) (*model.UserOauthBinding, error) {
-	userInfo, err := s.fetchProviderUserInfo(provider, code)
+func (s *OauthService) OauthBind(userID int64, provider model.OauthProvider, code string, codeVerifier string) (*model.UserOauthBinding, error) {
+	userInfo, err := s.fetchProviderUserInfo(provider, code, codeVerifier)
 	if err != nil {
+		return nil, err
+	}
+
+	existingBinding, err := s.userRepo.FindUserOauthBinding(provider, userInfo.OpenID)
+	if err == nil {
+		if existingBinding.UserID == userID {
+			return existingBinding, nil
+		}
+		return nil, &constant.OauthHasBeenBoundErr
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
 	userOauthBing, err := s.userRepo.CreateUserOauthBinding(userID, provider, &userInfo)
 	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			conflictBinding, findErr := s.userRepo.FindUserOauthBinding(provider, userInfo.OpenID)
+			if findErr == nil && conflictBinding.UserID == userID {
+				return conflictBinding, nil
+			}
+			return nil, &constant.OauthHasBeenBoundErr
+		}
 		return nil, err
 	}
 
 	return userOauthBing, nil
 }
 
-func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code string) (model.UserInfo, error) {
-	switch provider {
+func (s *OauthService) fetchProviderUserInfo(provider model.OauthProvider, code string, codeVerifier string) (model.UserInfo, error) {
+	normalizedProvider := model.OauthProvider(strings.ToLower(string(provider)))
+
+	switch normalizedProvider {
 	case model.OauthProviderQQ:
 		return s.handleQQ(code)
 	case model.OauthProviderWechat:
 		return s.handleWechat(code)
 	case model.OauthProviderGithub:
-		return s.handleGitHub(code)
+		return s.handleGitHub(code, codeVerifier)
 	case model.OauthProviderGoogle:
-		return s.handleGoogle(code)
+		return s.handleGoogle(code, codeVerifier)
 	default:
 		return model.UserInfo{}, &constant.ProviderNotSupportErr
 	}
@@ -86,20 +126,33 @@ func (s *OauthService) handleQQ(code string) (model.UserInfo, error) {
 		code,
 		config.GlobalConfig.Oauth.QQ.RedirectUri,
 	)
-	tokenReq, _ := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
+	tokenReq, err := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
+	if err != nil {
+		return userInfo, err
+	}
+
 	tokenResp, err := s.httpClient.Do(tokenReq)
 	if err != nil {
 		return userInfo, err
 	}
+	defer tokenResp.Body.Close()
+
+	tokenBody, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return userInfo, err
+	}
+
 	if tokenResp.StatusCode != http.StatusOK {
 		return userInfo, loginErr
 	}
-	defer tokenResp.Body.Close()
 
 	var qqTokenResp resp.QQTokenResp
-	err = json.NewDecoder(tokenResp.Body).Decode(&qqTokenResp)
+	err = json.Unmarshal(tokenBody, &qqTokenResp)
 	if err != nil {
 		return userInfo, err
+	}
+	if qqTokenResp.AccessToken == "" || qqTokenResp.OpenID == "" {
+		return userInfo, loginErr
 	}
 
 	// 通过accessToken获取userInfo
@@ -109,24 +162,48 @@ func (s *OauthService) handleQQ(code string) (model.UserInfo, error) {
 		config.GlobalConfig.Oauth.QQ.AppID,
 		qqTokenResp.OpenID,
 	)
-	userReq, _ := http.NewRequest(http.MethodGet, userReqUrl, nil)
+	userReq, err := http.NewRequest(http.MethodGet, userReqUrl, nil)
+	if err != nil {
+		return userInfo, err
+	}
+
 	userResp, err := s.httpClient.Do(userReq)
 	if err != nil {
 		return userInfo, err
 	}
 	defer userResp.Body.Close()
 
-	var qqUserResp resp.QQUserResp
-	err = json.NewDecoder(userResp.Body).Decode(&qqUserResp)
+	userBody, err := io.ReadAll(userResp.Body)
 	if err != nil {
 		return userInfo, err
 	}
 
+	if userResp.StatusCode != http.StatusOK {
+		return userInfo, loginErr
+	}
+
+	var qqUserResp resp.QQUserResp
+	err = json.Unmarshal(userBody, &qqUserResp)
+	if err != nil {
+		return userInfo, err
+	}
+	if qqUserResp.Ret != 0 || qqUserResp.Nickname == "" {
+		return userInfo, loginErr
+	}
+
 	userInfo.Nickname = qqUserResp.Nickname
-	userInfo.AvatarUrl = qqUserResp.FigureurlQQ2
+	userInfo.AvatarUrl = normalizeProviderAvatarURL(qqUserResp.FigureurlQQ2)
 	userInfo.OpenID = qqTokenResp.OpenID
 
 	return userInfo, nil
+}
+
+func normalizeProviderAvatarURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "http://thirdqq.qlogo.cn/") {
+		return "https://" + strings.TrimPrefix(raw, "http://")
+	}
+	return raw
 }
 
 func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
@@ -202,7 +279,7 @@ func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
 	return userInfo, nil
 }
 
-func (s *OauthService) handleGitHub(code string) (model.UserInfo, error) {
+func (s *OauthService) handleGitHub(code string, codeVerifier string) (model.UserInfo, error) {
 	var userInfo model.UserInfo
 	loginErr := &constant.LoginByGitHubFailedErr
 
@@ -213,7 +290,15 @@ func (s *OauthService) handleGitHub(code string) (model.UserInfo, error) {
 		Endpoint:     github.Endpoint,
 	}
 
-	token, err := conf.Exchange(context.Background(), code)
+	var (
+		token *oauth2.Token
+		err   error
+	)
+	if codeVerifier != "" {
+		token, err = conf.Exchange(context.Background(), code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
+	} else {
+		token, err = conf.Exchange(context.Background(), code)
+	}
 	if err != nil {
 		return userInfo, loginErr
 	}
@@ -243,7 +328,7 @@ func (s *OauthService) handleGitHub(code string) (model.UserInfo, error) {
 	return userInfo, nil
 }
 
-func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
+func (s *OauthService) handleGoogle(code string, codeVerifier string) (model.UserInfo, error) {
 	var userInfo model.UserInfo
 	loginErr := &constant.LoginByGoogleFailedErr
 
@@ -258,8 +343,17 @@ func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
 		Endpoint: google.Endpoint,
 	}
 
-	token, err := conf.Exchange(context.Background(), code)
+	var (
+		token *oauth2.Token
+		err   error
+	)
+	if codeVerifier != "" {
+		token, err = conf.Exchange(context.Background(), code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
+	} else {
+		token, err = conf.Exchange(context.Background(), code)
+	}
 	if err != nil {
+		fmt.Printf("[oauth][google] exchange failed code=%s has_verifier=%t err=%v\n", code, codeVerifier != "", err)
 		return userInfo, loginErr
 	}
 
@@ -267,18 +361,26 @@ func (s *OauthService) handleGoogle(code string) (model.UserInfo, error) {
 
 	userResp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	if err != nil {
+		fmt.Printf("[oauth][google] userinfo request failed err=%v\n", err)
 		return userInfo, loginErr
 	}
 	defer userResp.Body.Close()
 
 	if userResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(userResp.Body)
+		fmt.Printf("[oauth][google] userinfo status=%d body=%s\n", userResp.StatusCode, string(body))
 		return userInfo, loginErr
 	}
 
 	var googleUserResp resp.GoogleUserResp
 	err = json.NewDecoder(userResp.Body).Decode(&googleUserResp)
 	if err != nil {
+		fmt.Printf("[oauth][google] userinfo decode failed err=%v\n", err)
 		return userInfo, err
+	}
+	if googleUserResp.Sub == "" || googleUserResp.Name == "" {
+		fmt.Printf("[oauth][google] userinfo fields invalid sub_empty=%t name_empty=%t\n", googleUserResp.Sub == "", googleUserResp.Name == "")
+		return userInfo, loginErr
 	}
 
 	userInfo.Nickname = googleUserResp.Name

@@ -7,19 +7,32 @@ import (
 
 const (
 	// redis key 前缀
-	BlackListPrefix  = "blacklist:"
-	InviteCodePrefix = "invite:"
-	CaptchaPrefix    = "captcha:"
+	BlackListPrefix             = "blacklist:"
+	InviteCodePrefix            = "invite:"
+	CaptchaPrefix               = "captcha:"
+	CaptchaRepeatPrefix         = "captcha:repeat:"
+	RateLimitPrefix             = "ratelimit:"
+	AbusePrefix                 = "abuse:"
+	CacheRandomCoursesPrefix    = "random:courses:"
+	CacheRandomTeachersPrefix   = "random:teachers:"
+	ResourceUploadSessionPrefix = "resource:upload:session:"
 
 	// 腾讯云相关常量
-	TencentCosAvatarsKeyPrefix   = "avatars/"
-	TencentCosResourcesKeyPrefix = "resources/"
+	TencentCosAvatarsKeyPrefix          = "avatars/"
+	TencentCosResourcesKeyPrefix        = "resources/"
+	TencentCosPendingResourcesKeyPrefix = "resources/pending/"
 
 	// 其他常量
 	SchoolEmailSuffix  = "@csu.edu.cn"
 	GinUserID          = "user_id"
 	GinUserRole        = "user_role"
 	GinAccessTokenHash = "access_token_hash"
+	RandCoursesMin     = 1
+	RandCoursesMax     = 6187
+	RandCoursesCount   = 20
+	RandTeachersMin    = 1
+	RandTeachersMax    = 2504
+	RandTeachersCount  = 20
 )
 
 var (
@@ -46,6 +59,11 @@ var (
 	RefreshTokenExpiredErr              = errs.BusinessErr{Code: 1015, Msg: "refresh_token已过期，请重新登录把"}
 	UserBannedErr                       = errs.BusinessErr{Code: 1016, Msg: "用户已被封禁，无法登录"}
 	NotRefreshTokenErr                  = errs.BusinessErr{Code: 1017, Msg: "传入的token不是refresh_token，请重新传入"}
+	UserHasRegisteredErr                = errs.BusinessErr{Code: 1018, Msg: "用户已注册，请登录"}
+	InvalidSchoolEmailErr               = errs.BusinessErr{Code: 1019, Msg: "仅支持绑定校园邮箱"}
+	TooManyRequestsErr                  = errs.BusinessErr{Code: 1020, Msg: "请求过于频繁，请稍后再试"}
+	UserAutoBannedErr                   = errs.BusinessErr{Code: 1021, Msg: "账号因异常行为已被系统限制"}
+	OauthHasBeenBoundErr                = errs.BusinessErr{Code: 1022, Msg: "该第三方账号已绑定其他账号，请先使用原账号登录或先解绑"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

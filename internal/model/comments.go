@@ -60,16 +60,15 @@ func (c *CommentTargetType) Scan(src interface{}) error {
 }
 
 type Comments struct {
-	ID               int64             `gorm:"primary_key" json:"id"`
+	ID               int64             `gorm:"primary_key" json:"id,string"`
 	TargetType       CommentTargetType `gorm:"type:comment_target_type;not null" json:"target_type"`
-	TargetID         int64             `gorm:"type:bigint;not null" json:"target_id"`
-	UserID           int64             `gorm:"type:bigint;not null" json:"user_id"`
-	ParentID         int64             `gorm:"type:bigint" json:"parent_id"`
-	ReplyToCommentID int64             `gorm:"type:bigint" json:"reply_to_comment_id"`
+	TargetID         int64             `gorm:"type:bigint;not null" json:"target_id,string"`
+	UserID           int64             `gorm:"type:bigint;not null" json:"user_id,string"`
+	ParentID         *int64            `gorm:"type:bigint" json:"parent_id,string"`
+	ReplyToCommentID *int64            `gorm:"type:bigint" json:"reply_to_comment_id,string"`
 	Content          string            `gorm:"type:text;not null" json:"content"`
 	LikeCount        int               `gorm:"type:integer" json:"like_count"`
 	Status           CommentStatus     `gorm:"type:comment_status" json:"status"`
-	AuditRemark      string            `gorm:"type:text" json:"audit_remark"`
 	CreatedAt        time.Time         `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt        time.Time         `gorm:"type:autoUpdateTime" json:"updated_at"`
 	DeletedAt        gorm.DeletedAt    `gorm:"type:timestamptz" json:"deleted_at"`

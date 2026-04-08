@@ -9,15 +9,12 @@ import (
 
 func SetUpCommentRouter(r *gin.Engine, commentHandler *handler.CommentHandler) {
 	r.GET("/resources/:id/comments", middlewarepackage.OptionalJWTAuth(), commentHandler.GetResourceComments)
-	r.GET("/teachers/:id/comments", middlewarepackage.OptionalJWTAuth(), commentHandler.GetTeacherComments)
-	r.GET("/courses/:id/comments", middlewarepackage.OptionalJWTAuth(), commentHandler.GetCourseComments)
 
 	authGroup := r.Group("")
 	authGroup.Use(middlewarepackage.JWTAuth())
 	{
-		authGroup.POST("/resources/:id/comments", commentHandler.CreateResourceComment)
-		authGroup.POST("/teachers/:id/comments", commentHandler.CreateTeacherComment)
-		authGroup.POST("/courses/:id/comments", commentHandler.CreateCourseComment)
-		authGroup.DELETE("/comments/:id", commentHandler.DeleteComment)
+		authGroup.POST("/resources/:id/comments", middlewarepackage.AuthenticatedRateLimit("comment_write", 20, 60), commentHandler.CreateResourceComment)
+		authGroup.PUT("/comments/:id", middlewarepackage.AuthenticatedRateLimit("comment_write", 20, 60), commentHandler.UpdateComment)
+		authGroup.DELETE("/comments/:id", middlewarepackage.AuthenticatedRateLimit("comment_write", 20, 60), commentHandler.DeleteComment)
 	}
 }
