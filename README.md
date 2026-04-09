@@ -35,6 +35,7 @@ csu-star-backend/
 ├── data/            # 初始数据 (课程、教师、部门)
 ├── logger/          # 日志配置
 └── config.yaml      # 配置文件
+└── deploy.sh        # 构建脚本
 ```
 
 ## 主要功能模块
