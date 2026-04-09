@@ -28,7 +28,9 @@ cd "${APP_DIR}"
 echo "[deploy] sync code from origin/${BRANCH}"
 git fetch origin "${BRANCH}"
 git checkout "${BRANCH}"
-git pull --ff-only origin "${BRANCH}"
+echo "[deploy] reset local changes to keep deploy workspace clean"
+git reset --hard "origin/${BRANCH}"
+git clean -fd
 
 echo "[deploy] run tests"
 command -v go >/dev/null 2>&1 || {
