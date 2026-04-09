@@ -67,6 +67,6 @@ sudo pm2 restart "${APP_NAME}"
 
 echo "[deploy] wait 5s then show recent logs"
 sleep 5
-sudo pm2 logs "${APP_NAME}"
+sudo pm2 logs "${APP_NAME}" --lines 20 --nostream
 
 echo "[deploy] done"
