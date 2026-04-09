@@ -56,7 +56,7 @@ type MyCourseEvaluationsReq struct {
 }
 
 type CourseSimpleReq struct {
-	Q string `form:"q" binding:"omitempty,max=128"`
+	Q string `form:"q" binding:"omitempty,max=50"`
 }
 
 type CourseTeacherRelationCreateReq struct {
