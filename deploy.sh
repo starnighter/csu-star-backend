@@ -13,7 +13,7 @@ BACKUP_FILE="${BACKUP_DIR}/${APP_NAME}_${DATE_TAG}_${TIME_TAG}"
 # Ensure Go is resolvable in non-interactive SSH sessions.
 export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
 
-echo "[deploy] start"
+echo "[deploy] start version:2026-04-10-1"
 echo "[deploy] user: $(whoami)"
 echo "[deploy] PATH: ${PATH}"
 mkdir -p "${BACKUP_DIR}"
