@@ -104,6 +104,8 @@ csu-star-backend/
 
 ## 配置说明
 
+### 后端服务配置
+
 复制配置文件并修改相应配置：
 
 ```bash
@@ -150,6 +152,33 @@ oauth:
     client_id: "your_google_client_id"
     client_secret: "your_google_secret"
 ```
+
+### CI/CD 配置
+
+在 GitHub 仓库中配置 Secrets：
+- SSH_HOST: 远程服务器地址
+- SSH_USERNAME: 远程服务器登录用户名
+- SSH_PRIVATE_KEY: 远程服务器登录私钥
+
+配置Git SSH密钥，并拉取代码到服务器；
+```bash
+git clone git@github.com:starnighter/csu-star-backend.git
+```
+
+编译GO二进制程序：
+```bash
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o csu-star-backend ./cmd/main.go
+```
+
+安装并配置PM2：
+```bash
+pm2 start ./csu-star-backend --name csu-star-backend
+```
+
+（可选但推荐）配置用户权限：
+- 创建专用用户
+- 保存Git SSH密钥到用户目录
+- 限制用户文件权限
 
 ## 环境要求
 
