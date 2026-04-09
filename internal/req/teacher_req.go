@@ -9,7 +9,7 @@ type TeacherRankingReq struct {
 }
 
 type TeacherSimpleReq struct {
-	Q string `form:"q" binding:"omitempty,max=128"`
+	Q string `form:"q" binding:"omitempty,max=50"`
 }
 
 type TeacherEvaluationListReq struct {
