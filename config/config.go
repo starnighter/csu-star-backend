@@ -28,11 +28,13 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port              int `mapstructure:"port"`
-	ReadTimeoutSec    int `mapstructure:"read_timeout_sec"`
-	WriteTimeoutSec   int `mapstructure:"write_timeout_sec"`
-	IdleTimeoutSec    int `mapstructure:"idle_timeout_sec"`
-	ReadHeaderTimeout int `mapstructure:"read_header_timeout_sec"`
+	BindHost          string   `mapstructure:"bind_host"`
+	Port              int      `mapstructure:"port"`
+	ReadTimeoutSec    int      `mapstructure:"read_timeout_sec"`
+	WriteTimeoutSec   int      `mapstructure:"write_timeout_sec"`
+	IdleTimeoutSec    int      `mapstructure:"idle_timeout_sec"`
+	ReadHeaderTimeout int      `mapstructure:"read_header_timeout_sec"`
+	TrustedProxies    []string `mapstructure:"trusted_proxies"`
 }
 
 type DatabaseConfig struct {

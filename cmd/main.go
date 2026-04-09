@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -100,7 +101,11 @@ func main() {
 	}
 
 	// 初始化路由及依赖配置
-	r := router.SetUpRouter(db, oauthClient)
+	trustedProxies := resolveTrustedProxies(globalCfg.Server.TrustedProxies)
+	r, err := router.SetUpRouter(db, oauthClient, trustedProxies)
+	if err != nil {
+		logger.Log.Fatal("路由初始化失败，服务退出", zap.Error(err))
+	}
 
 	// 初始化定时任务
 	aggregateRepo := repo.NewAggregateRepository(db)
@@ -112,7 +117,7 @@ func main() {
 	scheduler.Start(appCtx)
 
 	// 配置HTTP Sever
-	addr := fmt.Sprintf("0.0.0.0:%v", globalCfg.Server.Port)
+	addr := fmt.Sprintf("%s:%v", resolveBindHost(globalCfg.Server.BindHost), globalCfg.Server.Port)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
@@ -186,6 +191,32 @@ func durationOrDefault(seconds int, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func resolveBindHost(bindHost string) string {
+	bindHost = strings.TrimSpace(bindHost)
+	if bindHost != "" {
+		return bindHost
+	}
+	if ginMode := strings.TrimSpace(strings.ToLower(os.Getenv("GIN_MODE"))); ginMode == "release" {
+		return "127.0.0.1"
+	}
+	return "0.0.0.0"
+}
+
+func resolveTrustedProxies(configured []string) []string {
+	result := make([]string, 0, len(configured))
+	for _, item := range configured {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		result = append(result, item)
+	}
+	if len(result) > 0 {
+		return result
+	}
+	return []string{"127.0.0.1", "::1"}
 }
 
 func relaxResourceTypeConstraint(db *gorm.DB) error {

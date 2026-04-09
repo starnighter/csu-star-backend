@@ -5,14 +5,18 @@ import (
 	middlewarepackage "csu-star-backend/internal/middleware"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/internal/service"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
+func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gin.Engine, error) {
 	r := gin.Default()
+	if err := r.SetTrustedProxies(trustedProxies); err != nil {
+		return nil, fmt.Errorf("set trusted proxies: %w", err)
+	}
 	r.Use(middlewarepackage.CORS())
 
 	// 初始化repo
@@ -67,5 +71,5 @@ func SetUpRouter(db *gorm.DB, client *http.Client) *gin.Engine {
 	SetUpMiscRouter(r, miscHandler)
 	SetUpAdminRouter(r, adminHandler)
 
-	return r
+	return r, nil
 }

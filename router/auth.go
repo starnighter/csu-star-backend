@@ -10,7 +10,7 @@ import (
 func SetupAuthRouter(r *gin.Engine, authHandler *handler.AuthHandler) {
 	g := r.Group("/auth")
 	{
-		g.POST("/forget", authHandler.ForgetPwd)
+		g.POST("/forget", middlewarepackage.IPBasedRateLimit("auth_captcha_ip", 10, 600), authHandler.ForgetPwd)
 		g.POST("/refresh", authHandler.Refresh)
 
 		authGroup := g.Group("")
@@ -22,9 +22,9 @@ func SetupAuthRouter(r *gin.Engine, authHandler *handler.AuthHandler) {
 		emailGroup := g.Group("/email")
 		{
 			emailGroup.POST("/register", authHandler.Register)
-			emailGroup.POST("/captcha", authHandler.SendCaptcha)
+			emailGroup.POST("/captcha", middlewarepackage.IPBasedRateLimit("auth_captcha_ip", 10, 600), authHandler.SendCaptcha)
 			emailGroup.POST("/verify", authHandler.VerifyCaptcha)
-			emailGroup.POST("/login", authHandler.Login)
+			emailGroup.POST("/login", middlewarepackage.IPBasedRateLimit("auth_login_ip", 30, 60), authHandler.Login)
 
 			emailAuthGroup := emailGroup.Group("")
 			emailAuthGroup.Use(middlewarepackage.JWTAuth())
