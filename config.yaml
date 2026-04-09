@@ -1,0 +1,67 @@
+app:
+  name: "CSU-Star"
+  version: "1.0.0"
+
+server:
+  bind_host: "127.0.0.1"
+  port: 8080
+  read_timeout_sec: 10
+  write_timeout_sec: 30
+  idle_timeout_sec: 60
+  read_header_timeout_sec: 5
+  trusted_proxies:
+    - "127.0.0.1"
+    - "::1"
+
+database:
+  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+  max_open_conns: 40
+  max_idle_conns: 20
+  conn_max_lifetime_min: 30
+  conn_max_idle_time_min: 10
+
+redis:
+  username: "default"
+  addr: "localhost:6379"
+  password: "your_redis_password"
+  db: 0
+
+jwt:
+  secret: "your_jwt_secret_key"
+  access_expiration: 3600
+  refresh_expiration: 604800
+
+security:
+  mode: "enforce"
+
+snowflake:
+  nodeID: 1
+
+tencent:
+  secret_id: "your_tencent_cloud_secret_id"
+  secret_key: "your_tencent_cloud_secret_key"
+  ses:
+    from_email_addr: "your_from_email_addr"
+    subject: "your_send_email_subject"
+    template_id: 0
+  cos:
+    app_id: "your_app_id"
+    bucket: "your_bucket"
+    region: "your_cos_region"
+
+oauth:
+  qq:
+    app_id: "your_qq_app_id"
+    app_key: "your_qq_app_key"
+    redirect_uri: "your_web_uri"
+  wechat:
+    app_id: "your_wechat_app_id"
+    app_secret: "your_wechat_app_secret"
+  github:
+    client_id: "your_github_client_id"
+    client_secret: "your_github_client_secret"
+    redirect_uri: "your_web_uri"
+  google:
+    client_id: "your_google_client_id"
+    client_secret: "your_google_client_secret"
+    redirect_uri: "your_web_uri"

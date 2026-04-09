@@ -1,0 +1,29 @@
+package handler
+
+import (
+	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/service"
+	"net/http"
+
+	"csu-star-backend/internal/resp"
+
+	"github.com/gin-gonic/gin"
+)
+
+type DepartmentHandler struct {
+	departmentService *service.DepartmentService
+}
+
+func NewDepartmentHandler(svc *service.DepartmentService) *DepartmentHandler {
+	return &DepartmentHandler{svc}
+}
+
+func (h *DepartmentHandler) GetAllDepartments(c *gin.Context) {
+	departments, err := h.departmentService.GetAllDepartments()
+	if err != nil {
+		failWithCodeAndLog(c, err, http.StatusInternalServerError, constant.QueryDepartmentsFailedErr.Code, constant.QueryDepartmentsFailedErr.Msg)
+		return
+	}
+
+	resp.Success(c, departments)
+}
