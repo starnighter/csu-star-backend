@@ -10,7 +10,12 @@ DATE_TAG="$(date +%Y%m%d)"
 TIME_TAG="$(date +%H%M%S)"
 BACKUP_FILE="${BACKUP_DIR}/${APP_NAME}_${DATE_TAG}_${TIME_TAG}"
 
+# Ensure Go is resolvable in non-interactive SSH sessions.
+export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+
 echo "[deploy] start"
+echo "[deploy] user: $(whoami)"
+echo "[deploy] PATH: ${PATH}"
 mkdir -p "${BACKUP_DIR}"
 
 if [[ ! -d "${APP_DIR}" ]]; then
@@ -26,6 +31,11 @@ git checkout "${BRANCH}"
 git pull --ff-only origin "${BRANCH}"
 
 echo "[deploy] run tests"
+command -v go >/dev/null 2>&1 || {
+  echo "[deploy] error: go command not found. PATH=${PATH}" >&2
+  exit 127
+}
+go version
 go test ./...
 
 if [[ -f "${APP_NAME}" ]]; then

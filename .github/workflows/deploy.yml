@@ -22,5 +22,5 @@ jobs:
           script: |
             cd /var/www/csu-star-backend
             chmod +x deploy.sh
-            source ~/.bashrc
+            export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
             ./deploy.sh
