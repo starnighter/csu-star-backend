@@ -36,6 +36,7 @@ var (
 	ErrResourceUploadIncomplete       = errors.New("resource upload incomplete")
 	ErrResourceRateLimited            = errors.New("resource rate limited")
 	ErrResourceUserBanned             = errors.New("resource user banned")
+	ErrResourceEmailNotVerified       = errors.New("resource email not verified")
 )
 
 type ResourceService struct {
@@ -169,6 +170,16 @@ func (s *ResourceService) CreateResource(userID int64, title, description string
 func (s *ResourceService) PrepareResourceUpload(userID int64, title, description string, courseID int64, resourceType string, files []UploadedResourceFile) (*ResourceUploadResponse, error) {
 	if err := s.enforceUploadRateLimit(userID, files); err != nil {
 		return nil, err
+	}
+
+	if s.db != nil {
+		var user model.Users
+		if err := s.db.Select("email_verified").Where("id = ?", userID).First(&user).Error; err != nil {
+			return nil, err
+		}
+		if !user.EmailVerified {
+			return nil, ErrResourceEmailNotVerified
+		}
 	}
 
 	exists, err := s.courseRepo.CourseExists(courseID)

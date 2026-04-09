@@ -76,6 +76,9 @@ func (h *ResourceHandler) CreateResource(c *gin.Context) {
 		uploadedFiles,
 	)
 	switch {
+	case errors.Is(err, service.ErrResourceEmailNotVerified):
+		resp.FailWithCode(c, http.StatusForbidden, constant.EmailNotVerifiedUploadErr.Code, constant.EmailNotVerifiedUploadErr.Msg)
+		return
 	case errors.Is(err, service.ErrResourceRateLimited):
 		resp.FailWithData(c, http.StatusTooManyRequests, constant.TooManyRequestsErr.Code, constant.TooManyRequestsErr.Msg, gin.H{"scope": "resource_prepare"})
 		return
