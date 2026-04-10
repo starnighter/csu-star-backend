@@ -440,6 +440,7 @@ func TestCreateSupplementRequestTeacher(t *testing.T) {
 		"张老师",
 		ptrInt16(1),
 		"高等数学",
+		nil,
 		"",
 		"",
 		"希望补录",
@@ -471,6 +472,7 @@ func TestCreateSupplementRequestCourseRejectsInvalidCourseType(t *testing.T) {
 		"",
 		nil,
 		"",
+		nil,
 		"大学英语",
 		"未知类型",
 		"",
@@ -485,6 +487,35 @@ func TestCreateSupplementRequestCourseRejectsInvalidCourseType(t *testing.T) {
 
 func ptrInt16(value int16) *int16 {
 	return &value
+}
+
+func TestCreateSupplementRequestCourseAllowsOptionalRelatedTeachers(t *testing.T) {
+	repoStub := &miscRepositoryStub{}
+	service := NewMiscService(nil, repoStub, &socialRepositoryStub{}, &invitationRepositoryStub{})
+
+	item, err := service.CreateSupplementRequest(
+		1,
+		"course",
+		"test@example.com",
+		"",
+		nil,
+		"",
+		[]string{"张老师", "李老师", "张老师"},
+		"大学英语",
+		"公选课",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("CreateSupplementRequest() error = %v", err)
+	}
+
+	if item == nil || repoStub.supplementRequest == nil {
+		t.Fatalf("expected supplement request to be created")
+	}
+
+	if string(repoStub.supplementRequest.RelatedTeacherNames) != "[\"张老师\",\"李老师\"]" {
+		t.Fatalf("expected related teacher names to be normalized, got %s", string(repoStub.supplementRequest.RelatedTeacherNames))
+	}
 }
 
 func TestGetMyInviteCode(t *testing.T) {

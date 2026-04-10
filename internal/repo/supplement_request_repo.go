@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -17,26 +18,27 @@ type SupplementRequestListQuery struct {
 }
 
 type SupplementRequestItem struct {
-	ID                 int64      `json:"id,string"`
-	UserID             int64      `json:"user_id,string"`
-	User               *UserBrief `json:"user,omitempty" gorm:"-"`
-	RequestType        string     `json:"request_type"`
-	Status             string     `json:"status"`
-	Contact            string     `json:"contact"`
-	TeacherName        string     `json:"teacher_name,omitempty"`
-	DepartmentID       *int16     `json:"department_id,omitempty"`
-	DepartmentName     string     `json:"department_name,omitempty"`
-	RelatedCourseName  string     `json:"related_course_name,omitempty"`
-	CourseName         string     `json:"course_name,omitempty"`
-	CourseType         string     `json:"course_type,omitempty"`
-	Remark             string     `json:"remark,omitempty"`
-	ReviewedBy         *int64     `json:"reviewed_by,omitempty,string"`
-	ReviewedAt         *time.Time `json:"reviewed_at,omitempty"`
-	ReviewNote         string     `json:"review_note,omitempty"`
-	ApprovedTargetType string     `json:"approved_target_type,omitempty"`
-	ApprovedTargetID   *int64     `json:"approved_target_id,omitempty,string"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                  int64          `json:"id,string"`
+	UserID              int64          `json:"user_id,string"`
+	User                *UserBrief     `json:"user,omitempty" gorm:"-"`
+	RequestType         string         `json:"request_type"`
+	Status              string         `json:"status"`
+	Contact             string         `json:"contact"`
+	TeacherName         string         `json:"teacher_name,omitempty"`
+	DepartmentID        *int16         `json:"department_id,omitempty"`
+	DepartmentName      string         `json:"department_name,omitempty"`
+	RelatedCourseName   string         `json:"related_course_name,omitempty"`
+	RelatedTeacherNames datatypes.JSON `json:"related_teacher_names,omitempty"`
+	CourseName          string         `json:"course_name,omitempty"`
+	CourseType          string         `json:"course_type,omitempty"`
+	Remark              string         `json:"remark,omitempty"`
+	ReviewedBy          *int64         `json:"reviewed_by,omitempty,string"`
+	ReviewedAt          *time.Time     `json:"reviewed_at,omitempty"`
+	ReviewNote          string         `json:"review_note,omitempty"`
+	ApprovedTargetType  string         `json:"approved_target_type,omitempty"`
+	ApprovedTargetID    *int64         `json:"approved_target_id,omitempty,string"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
 
 	ApplicantNickname  string `json:"-" gorm:"column:applicant_nickname"`
 	ApplicantAvatarURL string `json:"-" gorm:"column:applicant_avatar_url"`
@@ -80,9 +82,10 @@ func (r *miscRepository) ListSupplementRequests(query SupplementRequestListQuery
 			supplement_requests.teacher_name ILIKE ?
 			OR supplement_requests.course_name ILIKE ?
 			OR supplement_requests.related_course_name ILIKE ?
+			OR supplement_requests.related_teacher_names::text ILIKE ?
 			OR users.nickname ILIKE ?
 			OR supplement_requests.contact ILIKE ?
-		`, like, like, like, like, like)
+		`, like, like, like, like, like, like)
 	}
 
 	if err := base.Count(&total).Error; err != nil {
@@ -120,6 +123,7 @@ func (r *miscRepository) baseSupplementRequestQuery() *gorm.DB {
 			supplement_requests.department_id,
 			COALESCE(departments.name, '') AS department_name,
 			supplement_requests.related_course_name,
+			supplement_requests.related_teacher_names,
 			supplement_requests.course_name,
 			supplement_requests.course_type,
 			supplement_requests.remark,
