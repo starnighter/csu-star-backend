@@ -53,8 +53,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.56 // indirect
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ses v1.3.49 // indirect
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.72 // indirect
 	github.com/tencentyun/qcloud-cos-sts-sdk v0.0.0-20251226100129-1701383cae15 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect

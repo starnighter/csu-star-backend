@@ -95,14 +95,8 @@ func main() {
 	if err != nil {
 		logger.Log.Fatal("腾讯云COS客户端初始化失败，服务退出", zap.Error(err))
 	}
-	err = utils.InitTencentSes()
-	if err != nil {
-		logger.Log.Warn("腾讯云SES客户端初始化失败，将在验证码邮件发送时走SMTP降级链路", zap.Error(err))
-		if !utils.HasVerificationEmailFallbackProvider() {
-			logger.Log.Error("验证码邮件降级链路不可用：未配置可用的SMTP通道")
-		}
-	} else if !utils.HasVerificationEmailFallbackProvider() {
-		logger.Log.Warn("验证码邮件未配置SMTP降级通道；当腾讯云SES不可用时，验证码发送将直接失败")
+	if !utils.HasVerificationEmailFallbackProvider() {
+		logger.Log.Error("验证码邮件SMTP通道不可用：未配置可用的SMTP provider")
 	}
 
 	// 初始化路由及依赖配置
