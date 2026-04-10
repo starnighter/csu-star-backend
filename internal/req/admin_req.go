@@ -48,6 +48,20 @@ type AdminUserListReq struct {
 	Size    int    `form:"size" binding:"omitempty,min=1,max=100"`
 }
 
+type AdminUserCreateReq struct {
+	Email     string `json:"email" binding:"required,email,max=255"`
+	Password  string `json:"password" binding:"required,min=8,max=128"`
+	Nickname  string `json:"nickname" binding:"omitempty,max=64"`
+	AvatarURL string `json:"avatar_url" binding:"omitempty,max=500"`
+	Role      string `json:"role" binding:"omitempty,oneof=user auditor admin"`
+}
+
+type AdminUserUpdateReq struct {
+	Email    string `json:"email" binding:"omitempty,email,max=255"`
+	Password string `json:"password" binding:"omitempty,min=8,max=128"`
+	Nickname string `json:"nickname" binding:"omitempty,max=64"`
+}
+
 type AdminUserAdjustPointsReq struct {
 	Delta  int    `json:"delta" binding:"required"`
 	Reason string `json:"reason" binding:"required,max=255"`

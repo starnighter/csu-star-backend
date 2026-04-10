@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -258,6 +259,8 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
 
 type verificationEmailSender func(to []string, captcha string) error
 
+const verificationEmailSMTPTimeout = 10 * time.Second
+
 var sendVerificationEmailWithFallbackFn = sendVerificationEmailWithFallback
 var tencentVerificationEmailSender = func(from string, to []string, captcha string) error {
 	return TencentSesSendEmail(from, to, captcha)
@@ -266,6 +269,15 @@ var smtpVerificationEmailSender = sendVerificationEmailViaSMTP
 
 func SendVerificationEmail(to []string, captcha string) error {
 	return sendVerificationEmailWithFallbackFn(to, captcha)
+}
+
+func HasVerificationEmailFallbackProvider() bool {
+	if config.GlobalConfig == nil {
+		return false
+	}
+
+	return isCompleteSMTPConfig(config.GlobalConfig.Mail.Verification.Aliyun) ||
+		isCompleteSMTPConfig(config.GlobalConfig.Mail.Verification.QQ)
 }
 
 func sendVerificationEmailWithFallback(to []string, captcha string) error {
@@ -309,11 +321,15 @@ func sendVerificationEmailWithFallback(to []string, captcha string) error {
 		return nil
 	}
 
-	return errors.Join(errs...)
+	joinedErr := errors.Join(errs...)
+	if logger.Log != nil {
+		logger.Log.Error("验证码邮件所有通道均发送失败", zap.Strings("to", to), zap.Error(joinedErr))
+	}
+	return joinedErr
 }
 
 func sendVerificationEmailViaSMTP(cfg config.SMTPConfig, to []string, captcha string) error {
-	if strings.TrimSpace(cfg.Host) == "" || cfg.Port == 0 || strings.TrimSpace(cfg.Username) == "" || strings.TrimSpace(cfg.Password) == "" || strings.TrimSpace(cfg.FromEmailAddr) == "" {
+	if !isCompleteSMTPConfig(cfg) {
 		return errors.New("smtp config is incomplete")
 	}
 
@@ -363,11 +379,21 @@ func formatMailAddress(name, email string) string {
 	return fmt.Sprintf("%s <%s>", trimmedName, email)
 }
 
+func isCompleteSMTPConfig(cfg config.SMTPConfig) bool {
+	return strings.TrimSpace(cfg.Host) != "" &&
+		cfg.Port != 0 &&
+		strings.TrimSpace(cfg.Username) != "" &&
+		strings.TrimSpace(cfg.Password) != "" &&
+		strings.TrimSpace(cfg.FromEmailAddr) != ""
+}
+
 func dialSMTPOverTLS(addr string) (*smtp.Client, error) {
-	conn, err := tls.Dial("tcp", addr, &tls.Config{MinVersion: tls.VersionTLS12})
+	dialer := &net.Dialer{Timeout: verificationEmailSMTPTimeout}
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{MinVersion: tls.VersionTLS12})
 	if err != nil {
 		return nil, err
 	}
+	_ = conn.SetDeadline(time.Now().Add(verificationEmailSMTPTimeout))
 
 	host, _, splitErr := net.SplitHostPort(addr)
 	if splitErr != nil {
