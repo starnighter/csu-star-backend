@@ -564,18 +564,22 @@ func (s *AdminService) UpdateUser(userID, operatorID int64, email, password, nic
 
 		oldValues := jsonMap(
 			"email", user.Email,
+			"email_verified", user.EmailVerified,
 			"nickname", user.Nickname,
 			"password_changed", false,
 		)
 		newValues := map[string]interface{}{
 			"email":            user.Email,
+			"email_verified":   user.EmailVerified,
 			"nickname":         user.Nickname,
 			"password_changed": false,
 		}
 
 		if normalizedEmail != "" {
 			user.Email = &normalizedEmail
+			user.EmailVerified = true
 			newValues["email"] = normalizedEmail
+			newValues["email_verified"] = true
 		}
 		if nickname != "" {
 			user.Nickname = nickname
