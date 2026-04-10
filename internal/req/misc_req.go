@@ -58,7 +58,9 @@ type SupplementRequestCreateReq struct {
 	TeacherName         string   `json:"teacher_name" binding:"omitempty,max=128"`
 	DepartmentID        *int16   `json:"department_id" binding:"omitempty,min=1"`
 	RelatedCourseName   string   `json:"related_course_name" binding:"omitempty,max=128"`
+	RelatedCourseIDs    []string `json:"related_course_ids" binding:"omitempty,max=10,dive,max=32"`
 	RelatedCourseNames  []string `json:"related_course_names" binding:"omitempty,max=10,dive,max=128"`
+	RelatedTeacherIDs   []string `json:"related_teacher_ids" binding:"omitempty,max=10,dive,max=32"`
 	RelatedTeacherNames []string `json:"related_teacher_names" binding:"omitempty,max=10,dive,max=128"`
 	CourseName          string   `json:"course_name" binding:"omitempty,max=128"`
 	CourseType          string   `json:"course_type" binding:"omitempty,max=16"`

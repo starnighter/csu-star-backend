@@ -72,7 +72,9 @@ type SupplementRequests struct {
 	TeacherName         string                  `gorm:"type:varchar(128)" json:"teacher_name"`
 	DepartmentID        *int16                  `gorm:"type:smallint" json:"department_id"`
 	RelatedCourseName   string                  `gorm:"type:varchar(128)" json:"related_course_name"`
+	RelatedCourseIDs    datatypes.JSON          `gorm:"type:jsonb;default:'[]'" json:"related_course_ids"`
 	RelatedCourseNames  datatypes.JSON          `gorm:"type:jsonb;default:'[]'" json:"related_course_names"`
+	RelatedTeacherIDs   datatypes.JSON          `gorm:"type:jsonb;default:'[]'" json:"related_teacher_ids"`
 	RelatedTeacherNames datatypes.JSON          `gorm:"type:jsonb;default:'[]'" json:"related_teacher_names"`
 	CourseName          string                  `gorm:"type:varchar(128)" json:"course_name"`
 	CourseType          string                  `gorm:"type:varchar(16)" json:"course_type"`

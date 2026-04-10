@@ -440,6 +440,8 @@ func TestCreateSupplementRequestTeacher(t *testing.T) {
 		"张老师",
 		ptrInt16(1),
 		"高等数学",
+		[]string{"101"},
+		nil,
 		nil,
 		nil,
 		"",
@@ -475,6 +477,8 @@ func TestCreateSupplementRequestCourseRejectsInvalidCourseType(t *testing.T) {
 		"",
 		nil,
 		nil,
+		nil,
+		nil,
 		"大学英语",
 		"未知类型",
 		"",
@@ -503,6 +507,8 @@ func TestCreateSupplementRequestCourseAllowsOptionalRelatedTeachers(t *testing.T
 		nil,
 		"",
 		nil,
+		nil,
+		[]string{"201", "202", "201"},
 		[]string{"张老师", "李老师", "张老师"},
 		"大学英语",
 		"公选课",
@@ -519,6 +525,9 @@ func TestCreateSupplementRequestCourseAllowsOptionalRelatedTeachers(t *testing.T
 	if string(repoStub.supplementRequest.RelatedTeacherNames) != "[\"张老师\",\"李老师\"]" {
 		t.Fatalf("expected related teacher names to be normalized, got %s", string(repoStub.supplementRequest.RelatedTeacherNames))
 	}
+	if string(repoStub.supplementRequest.RelatedTeacherIDs) != "[201,202]" {
+		t.Fatalf("expected related teacher ids to be normalized, got %s", string(repoStub.supplementRequest.RelatedTeacherIDs))
+	}
 }
 
 func TestCreateSupplementRequestTeacherAllowsOptionalRelatedCourses(t *testing.T) {
@@ -532,7 +541,9 @@ func TestCreateSupplementRequestTeacherAllowsOptionalRelatedCourses(t *testing.T
 		"张老师",
 		ptrInt16(1),
 		"",
+		[]string{"301", "302", "301"},
 		[]string{"高等数学", "线性代数", "高等数学"},
+		nil,
 		nil,
 		"",
 		"",
@@ -548,6 +559,9 @@ func TestCreateSupplementRequestTeacherAllowsOptionalRelatedCourses(t *testing.T
 
 	if string(repoStub.supplementRequest.RelatedCourseNames) != "[\"高等数学\",\"线性代数\"]" {
 		t.Fatalf("expected related course names to be normalized, got %s", string(repoStub.supplementRequest.RelatedCourseNames))
+	}
+	if string(repoStub.supplementRequest.RelatedCourseIDs) != "[301,302]" {
+		t.Fatalf("expected related course ids to be normalized, got %s", string(repoStub.supplementRequest.RelatedCourseIDs))
 	}
 }
 
