@@ -28,6 +28,7 @@ type SupplementRequestItem struct {
 	DepartmentID        *int16         `json:"department_id,omitempty"`
 	DepartmentName      string         `json:"department_name,omitempty"`
 	RelatedCourseName   string         `json:"related_course_name,omitempty"`
+	RelatedCourseNames  datatypes.JSON `json:"related_course_names,omitempty"`
 	RelatedTeacherNames datatypes.JSON `json:"related_teacher_names,omitempty"`
 	CourseName          string         `json:"course_name,omitempty"`
 	CourseType          string         `json:"course_type,omitempty"`
@@ -82,10 +83,11 @@ func (r *miscRepository) ListSupplementRequests(query SupplementRequestListQuery
 			supplement_requests.teacher_name ILIKE ?
 			OR supplement_requests.course_name ILIKE ?
 			OR supplement_requests.related_course_name ILIKE ?
+			OR supplement_requests.related_course_names::text ILIKE ?
 			OR supplement_requests.related_teacher_names::text ILIKE ?
 			OR users.nickname ILIKE ?
 			OR supplement_requests.contact ILIKE ?
-		`, like, like, like, like, like, like)
+		`, like, like, like, like, like, like, like)
 	}
 
 	if err := base.Count(&total).Error; err != nil {
@@ -123,6 +125,7 @@ func (r *miscRepository) baseSupplementRequestQuery() *gorm.DB {
 			supplement_requests.department_id,
 			COALESCE(departments.name, '') AS department_name,
 			supplement_requests.related_course_name,
+			supplement_requests.related_course_names,
 			supplement_requests.related_teacher_names,
 			supplement_requests.course_name,
 			supplement_requests.course_type,

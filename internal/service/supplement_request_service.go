@@ -25,9 +25,14 @@ func (s *MiscService) CreateSupplementRequest(
 	requestType, contact, teacherName string,
 	departmentID *int16,
 	relatedCourseName string,
+	relatedCourseNames []string,
 	relatedTeacherNames []string,
 	courseName, courseType, remark string,
 ) (*repo.SupplementRequestItem, error) {
+	normalizedCourseNames, err := normalizeSupplementNames(append([]string{relatedCourseName}, relatedCourseNames...))
+	if err != nil {
+		return nil, ErrSupplementRequestInvalidPayload
+	}
 	normalizedTeacherNames, err := normalizeSupplementTeacherNames(relatedTeacherNames)
 	if err != nil {
 		return nil, ErrSupplementRequestInvalidPayload
@@ -41,6 +46,7 @@ func (s *MiscService) CreateSupplementRequest(
 		TeacherName:         strings.TrimSpace(teacherName),
 		DepartmentID:        departmentID,
 		RelatedCourseName:   strings.TrimSpace(relatedCourseName),
+		RelatedCourseNames:  mustJSON(normalizedCourseNames),
 		RelatedTeacherNames: mustJSON(normalizedTeacherNames),
 		CourseName:          strings.TrimSpace(courseName),
 		CourseType:          strings.TrimSpace(courseType),
@@ -214,12 +220,18 @@ func (s *MiscService) validateSupplementRequest(request *model.SupplementRequest
 
 	switch request.RequestType {
 	case model.SupplementRequestTypeTeacher:
-		if strings.TrimSpace(request.TeacherName) == "" || request.DepartmentID == nil || strings.TrimSpace(request.RelatedCourseName) == "" {
+		if strings.TrimSpace(request.TeacherName) == "" || request.DepartmentID == nil {
 			return ErrSupplementRequestInvalidPayload
 		}
 		if !s.departmentExists(*request.DepartmentID) {
 			return ErrSupplementRequestInvalidPayload
 		}
+		normalizedCourseNames, err := normalizeSupplementNamesFromJSON(request.RelatedCourseNames)
+		if err != nil {
+			return ErrSupplementRequestInvalidPayload
+		}
+		request.RelatedCourseNames = mustJSON(normalizedCourseNames)
+		request.RelatedCourseName = ""
 		request.RelatedTeacherNames = mustJSON([]string{})
 		request.CourseName = ""
 		request.CourseType = ""
@@ -234,6 +246,7 @@ func (s *MiscService) validateSupplementRequest(request *model.SupplementRequest
 		request.TeacherName = ""
 		request.DepartmentID = nil
 		request.RelatedCourseName = ""
+		request.RelatedCourseNames = mustJSON([]string{})
 		request.RelatedTeacherNames = mustJSON(normalizedTeacherNames)
 		request.CourseType = normalizeSupplementCourseType(request.CourseType)
 	default:
@@ -374,7 +387,7 @@ func mustJSON(value interface{}) datatypes.JSON {
 	return datatypes.JSON(raw)
 }
 
-func normalizeSupplementTeacherNames(names []string) ([]string, error) {
+func normalizeSupplementNames(names []string) ([]string, error) {
 	filtered := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
 	for _, item := range names {
@@ -397,7 +410,7 @@ func normalizeSupplementTeacherNames(names []string) ([]string, error) {
 	return filtered, nil
 }
 
-func normalizeSupplementTeacherNamesFromJSON(raw datatypes.JSON) ([]string, error) {
+func normalizeSupplementNamesFromJSON(raw datatypes.JSON) ([]string, error) {
 	if len(raw) == 0 {
 		return []string{}, nil
 	}
@@ -406,5 +419,13 @@ func normalizeSupplementTeacherNamesFromJSON(raw datatypes.JSON) ([]string, erro
 	if err := json.Unmarshal(raw, &names); err != nil {
 		return nil, err
 	}
-	return normalizeSupplementTeacherNames(names)
+	return normalizeSupplementNames(names)
+}
+
+func normalizeSupplementTeacherNames(names []string) ([]string, error) {
+	return normalizeSupplementNames(names)
+}
+
+func normalizeSupplementTeacherNamesFromJSON(raw datatypes.JSON) ([]string, error) {
+	return normalizeSupplementNamesFromJSON(raw)
 }

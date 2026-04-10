@@ -182,6 +182,7 @@ func (h *MiscHandler) CreateSupplementRequest(c *gin.Context) {
 		r.TeacherName,
 		r.DepartmentID,
 		r.RelatedCourseName,
+		r.RelatedCourseNames,
 		r.RelatedTeacherNames,
 		r.CourseName,
 		r.CourseType,
