@@ -439,9 +439,9 @@ func TestCreateSupplementRequestTeacher(t *testing.T) {
 		"test@example.com",
 		"张老师",
 		ptrInt16(1),
-		"高等数学",
+		"",
 		[]string{"101"},
-		nil,
+		[]string{"高等数学"},
 		nil,
 		nil,
 		"",
@@ -562,6 +562,29 @@ func TestCreateSupplementRequestTeacherAllowsOptionalRelatedCourses(t *testing.T
 	}
 	if string(repoStub.supplementRequest.RelatedCourseIDs) != "[301,302]" {
 		t.Fatalf("expected related course ids to be normalized, got %s", string(repoStub.supplementRequest.RelatedCourseIDs))
+	}
+}
+
+func TestCreateSupplementRequestRejectsMismatchedRelationPairs(t *testing.T) {
+	service := NewMiscService(nil, &miscRepositoryStub{}, &socialRepositoryStub{}, &invitationRepositoryStub{})
+
+	_, err := service.CreateSupplementRequest(
+		1,
+		"course",
+		"test@example.com",
+		"",
+		nil,
+		"",
+		nil,
+		nil,
+		[]string{"201"},
+		[]string{"张老师", "李老师"},
+		"大学英语",
+		"公选课",
+		"",
+	)
+	if !errors.Is(err, ErrSupplementRequestInvalidPayload) {
+		t.Fatalf("expected ErrSupplementRequestInvalidPayload, got %v", err)
 	}
 }
 
