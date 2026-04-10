@@ -74,6 +74,9 @@ func main() {
 	if err := ensureCourseTeacherStatusColumns(db); err != nil {
 		logger.Log.Error("补齐课程教师状态字段失败：", zap.Error(err))
 	}
+	if err := ensureTeacherMetadataColumn(db); err != nil {
+		logger.Log.Error("补齐教师元数据字段失败：", zap.Error(err))
+	}
 	if err := ensureEvaluationVisibilityIndexes(db); err != nil {
 		logger.Log.Error("补齐评价可见性索引失败：", zap.Error(err))
 	}
@@ -476,6 +479,17 @@ func ensureCourseTeacherStatusColumns(db *gorm.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_course_teachers_teacher_status ON course_teachers (teacher_id, status);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_course_teachers_course_teacher_unique
 			ON course_teachers (course_id, teacher_id);
+	`).Error
+}
+
+func ensureTeacherMetadataColumn(db *gorm.DB) error {
+	return db.Exec(`
+		ALTER TABLE teachers
+			ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+		UPDATE teachers
+		SET metadata = '{}'::jsonb
+		WHERE metadata IS NULL;
 	`).Error
 }
 
