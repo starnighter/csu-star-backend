@@ -639,7 +639,7 @@ func (s *ResourceService) enforceUploadRateLimit(userID int64, files []UploadedR
 	}
 
 	perHourKey := BuildRateLimitKey("resource_prepare", "user", strconv.FormatInt(userID, 10))
-	decision, err := s.securitySvc.RateLimit(utils.Ctx, utils.RDB, perHourKey, 10, time.Hour)
+	decision, err := s.securitySvc.RateLimit(utils.Ctx, utils.RDB, perHourKey, 20, time.Hour)
 	if err != nil {
 		return err
 	}
@@ -685,7 +685,7 @@ func (s *ResourceService) enforceUploadRateLimit(userID int64, files []UploadedR
 	}
 
 	fileCountKey := BuildRateLimitKey("resource_upload_files", "user", strconv.FormatInt(userID, 10))
-	countDecision, err := s.securitySvc.RateLimit(utils.Ctx, utils.RDB, fileCountKey, 30, 24*time.Hour)
+	countDecision, err := s.securitySvc.RateLimit(utils.Ctx, utils.RDB, fileCountKey, 100, 24*time.Hour)
 	if err != nil {
 		return err
 	}
@@ -693,7 +693,7 @@ func (s *ResourceService) enforceUploadRateLimit(userID int64, files []UploadedR
 	if err := utils.RDB.Set(utils.Ctx, fileCountKey, currentCount, 24*time.Hour).Err(); err != nil {
 		return err
 	}
-	if currentCount > 30 {
+	if currentCount > 100 {
 		_, _, _ = s.securitySvc.CountAbuseAndMaybeBan(
 			utils.Ctx,
 			utils.RDB,
