@@ -98,6 +98,11 @@ func main() {
 	err = utils.InitTencentSes()
 	if err != nil {
 		logger.Log.Warn("腾讯云SES客户端初始化失败，将在验证码邮件发送时走SMTP降级链路", zap.Error(err))
+		if !utils.HasVerificationEmailFallbackProvider() {
+			logger.Log.Error("验证码邮件降级链路不可用：未配置可用的SMTP通道")
+		}
+	} else if !utils.HasVerificationEmailFallbackProvider() {
+		logger.Log.Warn("验证码邮件未配置SMTP降级通道；当腾讯云SES不可用时，验证码发送将直接失败")
 	}
 
 	// 初始化路由及依赖配置
@@ -375,6 +380,7 @@ func ensureAuditLogActions(db *gorm.DB) error {
 	return db.Exec(`
 		DO $$
 		BEGIN
+			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'create';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_violation';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_ban';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_unban';

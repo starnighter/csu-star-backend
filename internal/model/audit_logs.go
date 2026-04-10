@@ -12,6 +12,7 @@ import (
 type AuditAction string
 
 const (
+	AuditActionCreate             AuditAction = "create"
 	AuditActionApprove            AuditAction = "approve"
 	AuditActionReject             AuditAction = "reject"
 	AuditActionDelete             AuditAction = "delete"

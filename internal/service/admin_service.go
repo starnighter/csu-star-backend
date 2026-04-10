@@ -1,6 +1,7 @@
 package service
 
 import (
+	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
@@ -421,6 +422,98 @@ func (s *AdminService) ListUserViolations(userID, page, size int64) ([]repo.Admi
 	parsedSize := int(size)
 	fillPagination(&parsedPage, &parsedSize)
 	return s.adminRepo.ListUserViolations(userID, parsedPage, parsedSize)
+}
+
+func (s *AdminService) CreateUser(operatorID int64, email, password, nickname, avatarURL, role string, ip net.IP) (*repo.AdminUserItem, error) {
+	normalizedEmail, err := normalizeSchoolEmail(email)
+	if err != nil {
+		return nil, ErrAdminInvalidPayload
+	}
+
+	password = strings.TrimSpace(password)
+	nickname = strings.TrimSpace(nickname)
+	avatarURL = strings.TrimSpace(avatarURL)
+	role = strings.TrimSpace(role)
+	if password == "" {
+		return nil, ErrAdminInvalidPayload
+	}
+	if role == "" {
+		role = string(model.UserRoleUser)
+	}
+	if role != string(model.UserRoleUser) && role != string(model.UserRoleAuditor) && role != string(model.UserRoleAdmin) {
+		return nil, ErrAdminInvalidPayload
+	}
+
+	hashPassword, err := utils.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	if nickname == "" {
+		nickname, err = utils.GenerateNickname()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*repo.AdminUserItem, error) {
+		var existing model.Users
+		findErr := tx.Select("id").Where("email = ?", normalizedEmail).First(&existing).Error
+		switch {
+		case findErr == nil:
+			return nil, ErrAdminConflict
+		case findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound):
+			return nil, findErr
+		}
+
+		user := &model.Users{
+			Email:         &normalizedEmail,
+			Password:      hashPassword,
+			Nickname:      nickname,
+			AvatarUrl:     avatarURL,
+			Role:          model.UserRole(role),
+			Status:        model.UserStatusActive,
+			EmailVerified: true,
+		}
+		if err := tx.Create(user).Error; err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "duplicate") || errors.Is(err, &constant.UserHasRegisteredErr) {
+				return nil, ErrAdminConflict
+			}
+			return nil, err
+		}
+
+		if user.Points > 0 {
+			if err := tx.Create(&model.PointsRecords{
+				UserID:    user.ID,
+				Type:      model.PointsTypeInitial,
+				Delta:     user.Points,
+				Balance:   user.Points,
+				Reason:    "管理员手动创建用户初始积分",
+				RelatedID: 0,
+			}).Error; err != nil {
+				return nil, err
+			}
+		}
+
+		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
+			OperatorID: operatorID,
+			Action:     model.AuditActionCreate,
+			TargetType: "user",
+			TargetID:   user.ID,
+			NewValues: jsonMap(
+				"email", normalizedEmail,
+				"nickname", user.Nickname,
+				"role", user.Role,
+				"status", user.Status,
+				"email_verified", user.EmailVerified,
+			),
+			Reason:    "admin create user",
+			IpAddress: ip,
+		}); err != nil {
+			return nil, err
+		}
+
+		return buildAdminUserItem(user), nil
+	})
 }
 
 func (s *AdminService) BanUser(userID, operatorID int64, reason string, ip net.IP) error {
@@ -1356,6 +1449,32 @@ func (s *AdminService) adminRepoWithTx(tx *gorm.DB) repo.AdminRepository {
 		return s.adminRepo
 	}
 	return withTx.WithTx(tx)
+}
+
+func buildAdminUserItem(user *model.Users) *repo.AdminUserItem {
+	if user == nil {
+		return nil
+	}
+	lastLoginAt := user.LastLoginAt
+	return &repo.AdminUserItem{
+		ID:                user.ID,
+		Email:             user.Email,
+		Nickname:          user.Nickname,
+		AvatarURL:         user.AvatarUrl,
+		Role:              string(user.Role),
+		Status:            string(user.Status),
+		BanUntil:          user.BanUntil,
+		BanReason:         user.BanReason,
+		BanSource:         user.BanSource,
+		ViolationCount:    user.ViolationCount,
+		LastViolationAt:   user.LastViolationAt,
+		EmailVerified:     user.EmailVerified,
+		Points:            user.Points,
+		FreeDownloadCount: user.FreeDownloadCount,
+		LastLoginAt:       &lastLoginAt,
+		CreatedAt:         user.CreatedAt,
+		UpdatedAt:         user.UpdatedAt,
+	}
 }
 
 func withWriteTxValue[T any](s *AdminService, fn func(repo.AdminRepository, repo.CourseRepository, *gorm.DB) (T, error)) (T, error) {

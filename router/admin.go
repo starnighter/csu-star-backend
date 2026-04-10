@@ -32,6 +32,7 @@ func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler) {
 		adminGroup.GET("/resources", adminHandler.ListResources)
 		adminGroup.GET("/audit-logs", adminHandler.ListAuditLogs)
 
+		adminGroup.POST("/users", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.CreateUser)
 		adminGroup.POST("/users/:id/ban", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.BanUser)
 		adminGroup.POST("/users/:id/unban", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.UnbanUser)
 		adminGroup.POST("/users/:id/points", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.AdjustUserPoints)
