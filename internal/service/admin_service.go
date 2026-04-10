@@ -516,6 +516,95 @@ func (s *AdminService) CreateUser(operatorID int64, email, password, nickname, a
 	})
 }
 
+func (s *AdminService) UpdateUser(userID, operatorID int64, email, password, nickname string, ip net.IP) (*repo.AdminUserItem, error) {
+	email = strings.TrimSpace(email)
+	password = strings.TrimSpace(password)
+	nickname = strings.TrimSpace(nickname)
+	if email == "" && password == "" && nickname == "" {
+		return nil, ErrAdminInvalidPayload
+	}
+
+	var normalizedEmail string
+	if email != "" {
+		var err error
+		normalizedEmail, err = normalizeSchoolEmail(email)
+		if err != nil {
+			return nil, ErrAdminInvalidPayload
+		}
+	}
+
+	var hashPassword string
+	if password != "" {
+		var err error
+		hashPassword, err = utils.HashPassword(password)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*repo.AdminUserItem, error) {
+		user, err := adminRepo.GetUserByID(userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAdminTargetNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if normalizedEmail != "" {
+			var existing model.Users
+			findErr := tx.Select("id").Where("email = ? AND id <> ?", normalizedEmail, user.ID).First(&existing).Error
+			switch {
+			case findErr == nil:
+				return nil, ErrAdminConflict
+			case findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound):
+				return nil, findErr
+			}
+		}
+
+		oldValues := jsonMap(
+			"email", user.Email,
+			"nickname", user.Nickname,
+			"password_changed", false,
+		)
+		newValues := map[string]interface{}{
+			"email":            user.Email,
+			"nickname":         user.Nickname,
+			"password_changed": false,
+		}
+
+		if normalizedEmail != "" {
+			user.Email = &normalizedEmail
+			newValues["email"] = normalizedEmail
+		}
+		if nickname != "" {
+			user.Nickname = nickname
+			newValues["nickname"] = nickname
+		}
+		if hashPassword != "" {
+			user.Password = hashPassword
+			newValues["password_changed"] = true
+		}
+
+		if err := adminRepo.UpdateUser(user); err != nil {
+			return nil, err
+		}
+		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
+			OperatorID: operatorID,
+			Action:     model.AuditActionUpdate,
+			TargetType: "user",
+			TargetID:   user.ID,
+			OldValues:  oldValues,
+			NewValues:  mustJSON(newValues),
+			Reason:     "admin update user profile",
+			IpAddress:  ip,
+		}); err != nil {
+			return nil, err
+		}
+		return buildAdminUserItem(user), nil
+	})
+}
+
 func (s *AdminService) BanUser(userID, operatorID int64, reason string, ip net.IP) error {
 	return s.withWriteTx(func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) error {
 		item, err := adminRepo.GetUserByID(userID)

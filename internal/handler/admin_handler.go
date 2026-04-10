@@ -201,6 +201,31 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 	}
 }
 
+func (h *AdminHandler) UpdateUser(c *gin.Context) {
+	userID, ok := parsePositiveID(c)
+	if !ok {
+		return
+	}
+	var r req.AdminUserUpdateReq
+	if err := c.ShouldBindJSON(&r); err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+	item, err := h.adminSvc.UpdateUser(userID, currentUserID(c), r.Email, r.Password, r.Nickname, parseIP(c.ClientIP()))
+	switch {
+	case errors.Is(err, service.ErrAdminTargetNotFound):
+		resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "用户不存在")
+	case errors.Is(err, service.ErrAdminConflict):
+		resp.FailWithCode(c, http.StatusConflict, resp.CodeFail, "用户账号已存在")
+	case errors.Is(err, service.ErrAdminInvalidPayload):
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "用户更新参数无效")
+	case err != nil:
+		failInternalWithLog(c, err)
+	default:
+		resp.Success(c, item)
+	}
+}
+
 func (h *AdminHandler) BanUser(c *gin.Context) {
 	userID, ok := parsePositiveID(c)
 	if !ok {

@@ -381,6 +381,7 @@ func ensureAuditLogActions(db *gorm.DB) error {
 		DO $$
 		BEGIN
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'create';
+			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'update';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_violation';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_ban';
 			ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'auto_unban';

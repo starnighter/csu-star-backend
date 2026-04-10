@@ -13,6 +13,7 @@ type AuditAction string
 
 const (
 	AuditActionCreate             AuditAction = "create"
+	AuditActionUpdate             AuditAction = "update"
 	AuditActionApprove            AuditAction = "approve"
 	AuditActionReject             AuditAction = "reject"
 	AuditActionDelete             AuditAction = "delete"

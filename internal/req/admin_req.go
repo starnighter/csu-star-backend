@@ -56,6 +56,12 @@ type AdminUserCreateReq struct {
 	Role      string `json:"role" binding:"omitempty,oneof=user auditor admin"`
 }
 
+type AdminUserUpdateReq struct {
+	Email    string `json:"email" binding:"omitempty,email,max=255"`
+	Password string `json:"password" binding:"omitempty,min=8,max=128"`
+	Nickname string `json:"nickname" binding:"omitempty,max=64"`
+}
+
 type AdminUserAdjustPointsReq struct {
 	Delta  int    `json:"delta" binding:"required"`
 	Reason string `json:"reason" binding:"required,max=255"`
