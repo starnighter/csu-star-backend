@@ -552,13 +552,12 @@ func (s *AdminService) UpdateUser(userID, operatorID int64, email, password, nic
 		}
 
 		if normalizedEmail != "" {
-			var existing model.Users
-			findErr := tx.Select("id").Where("email = ? AND id <> ?", normalizedEmail, user.ID).First(&existing).Error
-			switch {
-			case findErr == nil:
+			var existingCount int64
+			if err := tx.Model(&model.Users{}).Where("email = ? AND id <> ?", normalizedEmail, user.ID).Count(&existingCount).Error; err != nil {
+				return nil, err
+			}
+			if existingCount > 0 {
 				return nil, ErrAdminConflict
-			case findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound):
-				return nil, findErr
 			}
 		}
 
