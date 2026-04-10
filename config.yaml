@@ -49,6 +49,24 @@ tencent:
     bucket: "your_bucket"
     region: "your_cos_region"
 
+mail:
+  verification:
+    subject: "CSU Star | 南极星邮箱验证码"
+    aliyun:
+      host: "smtpdm.aliyun.com"
+      port: 465
+      username: "your_aliyun_directmail_username"
+      password: "your_aliyun_directmail_password"
+      from_email_addr: "noreply@example.com"
+      from_name: "CSU Star"
+    qq:
+      host: "smtp.qq.com"
+      port: 465
+      username: "your_qq_smtp_username"
+      password: "your_qq_smtp_password"
+      from_email_addr: "your_qq_from_email"
+      from_name: "CSU Star"
+
 oauth:
   qq:
     app_id: "your_qq_app_id"

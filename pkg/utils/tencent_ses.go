@@ -4,6 +4,7 @@ import (
 	"csu-star-backend/config"
 	"csu-star-backend/logger"
 	"errors"
+	"strings"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tencErr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
@@ -33,6 +34,13 @@ func InitTencentSes() error {
 }
 
 func TencentSesSendEmail(from string, to []string, captcha string) error {
+	if sesClient == nil {
+		return errors.New("tencent ses client is not initialized")
+	}
+	if strings.TrimSpace(from) == "" {
+		return errors.New("tencent ses from email is empty")
+	}
+
 	req := ses.NewSendEmailRequest()
 	req.FromEmailAddress = common.StringPtr(from)
 	req.Subject = common.StringPtr(config.GlobalConfig.Tencent.Ses.Subject)
@@ -46,7 +54,7 @@ func TencentSesSendEmail(from string, to []string, captcha string) error {
 
 	resp, err := sesClient.SendEmail(req)
 	var tencentCloudSDKError *tencErr.TencentCloudSDKError
-	if errors.Is(err, tencentCloudSDKError) {
+	if errors.As(err, &tencentCloudSDKError) {
 		logger.Log.Error("调用腾讯云SES SDK发送邮件Api失败：", zap.Error(err))
 		return err
 	}

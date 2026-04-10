@@ -19,6 +19,7 @@ type Config struct {
 	Security  SecurityConfig  `mapstructure:"security"`
 	Snowflake SnowflakeConfig `mapstructure:"snowflake"`
 	Tencent   TencentConfig   `mapstructure:"tencent"`
+	Mail      MailConfig      `mapstructure:"mail"`
 	Oauth     OauthConfig     `mapstructure:"oauth"`
 }
 
@@ -83,6 +84,25 @@ type CosConfig struct {
 	AppID  string `mapstructure:"app_id"`
 	Bucket string `mapstructure:"bucket"`
 	Region string `mapstructure:"region"`
+}
+
+type MailConfig struct {
+	Verification VerificationMailConfig `mapstructure:"verification"`
+}
+
+type VerificationMailConfig struct {
+	Subject string     `mapstructure:"subject"`
+	Aliyun  SMTPConfig `mapstructure:"aliyun"`
+	QQ      SMTPConfig `mapstructure:"qq"`
+}
+
+type SMTPConfig struct {
+	Host          string `mapstructure:"host"`
+	Port          int    `mapstructure:"port"`
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
+	FromEmailAddr string `mapstructure:"from_email_addr"`
+	FromName      string `mapstructure:"from_name"`
 }
 
 type OauthConfig struct {

@@ -97,7 +97,7 @@ func main() {
 	}
 	err = utils.InitTencentSes()
 	if err != nil {
-		logger.Log.Fatal("腾讯云SES客户端初始化失败，服务退出", zap.Error(err))
+		logger.Log.Warn("腾讯云SES客户端初始化失败，将在验证码邮件发送时走SMTP降级链路", zap.Error(err))
 	}
 
 	// 初始化路由及依赖配置

@@ -2,7 +2,6 @@ package service
 
 import (
 	"crypto/md5"
-	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
@@ -60,13 +59,13 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) error {
 		return &constant.SendCaptchaRepeatedlyIn60sErr
 	}
 
-	// 调用腾讯云SES SDK发送验证码到指定邮箱
+	// 发送验证码邮件，默认走腾讯云 SES，失败后依次降级到阿里云 DirectMail SMTP 和 QQ SMTP。
 	to := []string{normalizedEmail}
 	captcha, err := utils.GenerateCaptcha(6)
 	if err != nil {
 		return err
 	}
-	err = utils.TencentSesSendEmail(config.GlobalConfig.Tencent.Ses.FromEmailAddr, to, captcha)
+	err = utils.SendVerificationEmail(to, captcha)
 	if err != nil {
 		return err
 	}
