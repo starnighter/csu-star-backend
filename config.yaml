@@ -40,10 +40,6 @@ snowflake:
 tencent:
   secret_id: "your_tencent_cloud_secret_id"
   secret_key: "your_tencent_cloud_secret_key"
-  ses:
-    from_email_addr: "your_from_email_addr"
-    subject: "your_send_email_subject"
-    template_id: 0
   cos:
     app_id: "your_app_id"
     bucket: "your_bucket"
@@ -52,20 +48,21 @@ tencent:
 mail:
   verification:
     subject: "CSU Star | 南极星邮箱验证码"
-    aliyun:
-      host: "smtpdm.aliyun.com"
-      port: 465
-      username: "your_aliyun_directmail_username"
-      password: "your_aliyun_directmail_password"
-      from_email_addr: "noreply@example.com"
-      from_name: "CSU Star"
-    qq:
-      host: "smtp.qq.com"
-      port: 465
-      username: "your_qq_smtp_username"
-      password: "your_qq_smtp_password"
-      from_email_addr: "your_qq_from_email"
-      from_name: "CSU Star"
+    providers:
+      - name: "163-primary"
+        host: "smtp.163.com"
+        port: 465
+        username: "your_163_username"
+        password: "your_163_smtp_password"
+        from_email_addr: "your_163_username"
+        from_name: "CSU Star"
+      - name: "126-secondary"
+        host: "smtp.126.com"
+        port: 465
+        username: "your_126_username"
+        password: "your_126_smtp_password"
+        from_email_addr: "your_126_username"
+        from_name: "CSU Star"
 
 oauth:
   qq:

@@ -70,14 +70,7 @@ type SnowflakeConfig struct {
 type TencentConfig struct {
 	SecretID  string    `mapstructure:"secret_id"`
 	SecretKey string    `mapstructure:"secret_key"`
-	Ses       SesConfig `mapstructure:"ses"`
 	Cos       CosConfig `mapstructure:"cos"`
-}
-
-type SesConfig struct {
-	FromEmailAddr string `mapstructure:"from_email_addr"`
-	Subject       string `mapstructure:"subject"`
-	TemplateID    uint64 `mapstructure:"template_id"`
 }
 
 type CosConfig struct {
@@ -91,12 +84,12 @@ type MailConfig struct {
 }
 
 type VerificationMailConfig struct {
-	Subject string     `mapstructure:"subject"`
-	Aliyun  SMTPConfig `mapstructure:"aliyun"`
-	QQ      SMTPConfig `mapstructure:"qq"`
+	Subject   string       `mapstructure:"subject"`
+	Providers []SMTPConfig `mapstructure:"providers"`
 }
 
 type SMTPConfig struct {
+	Name          string `mapstructure:"name"`
 	Host          string `mapstructure:"host"`
 	Port          int    `mapstructure:"port"`
 	Username      string `mapstructure:"username"`

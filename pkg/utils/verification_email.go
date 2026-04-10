@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/smtp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -262,10 +263,8 @@ type verificationEmailSender func(to []string, captcha string) error
 const verificationEmailSMTPTimeout = 10 * time.Second
 
 var sendVerificationEmailWithFallbackFn = sendVerificationEmailWithFallback
-var tencentVerificationEmailSender = func(from string, to []string, captcha string) error {
-	return TencentSesSendEmail(from, to, captcha)
-}
 var smtpVerificationEmailSender = sendVerificationEmailViaSMTP
+var verificationEmailProviderCursor atomic.Uint64
 
 func SendVerificationEmail(to []string, captcha string) error {
 	return sendVerificationEmailWithFallbackFn(to, captcha)
@@ -276,47 +275,40 @@ func HasVerificationEmailFallbackProvider() bool {
 		return false
 	}
 
-	return isCompleteSMTPConfig(config.GlobalConfig.Mail.Verification.Aliyun) ||
-		isCompleteSMTPConfig(config.GlobalConfig.Mail.Verification.QQ)
+	return len(verificationSMTPProviders()) > 0
 }
 
 func sendVerificationEmailWithFallback(to []string, captcha string) error {
-	attempts := []struct {
-		name string
-		send verificationEmailSender
-	}{
-		{
-			name: "tencent_ses",
-			send: func(to []string, captcha string) error {
-				return tencentVerificationEmailSender(config.GlobalConfig.Tencent.Ses.FromEmailAddr, to, captcha)
-			},
-		},
-		{
-			name: "aliyun_directmail_smtp",
-			send: func(to []string, captcha string) error {
-				return smtpVerificationEmailSender(config.GlobalConfig.Mail.Verification.Aliyun, to, captcha)
-			},
-		},
-		{
-			name: "qq_smtp",
-			send: func(to []string, captcha string) error {
-				return smtpVerificationEmailSender(config.GlobalConfig.Mail.Verification.QQ, to, captcha)
-			},
-		},
+	providers := verificationSMTPProviders()
+	if len(providers) == 0 {
+		return errors.New("no smtp providers configured")
 	}
 
+	start := int(verificationEmailProviderCursor.Add(1)-1) % len(providers)
+
 	var errs []error
-	for _, attempt := range attempts {
-		if err := attempt.send(to, captcha); err != nil {
+	for offset := range providers {
+		provider := providers[(start+offset)%len(providers)]
+		if err := smtpVerificationEmailSender(provider, to, captcha); err != nil {
 			if logger.Log != nil {
-				logger.Log.Warn("验证码邮件发送失败，尝试降级通道", zap.String("provider", attempt.name), zap.Error(err))
+				logger.Log.Warn(
+					"验证码邮件发送失败，尝试下一个SMTP通道",
+					zap.String("provider", providerDisplayName(provider)),
+					zap.String("from", provider.FromEmailAddr),
+					zap.Error(err),
+				)
 			}
-			errs = append(errs, fmt.Errorf("%s: %w", attempt.name, err))
+			errs = append(errs, fmt.Errorf("%s: %w", providerDisplayName(provider), err))
 			continue
 		}
 
 		if logger.Log != nil {
-			logger.Log.Info("验证码邮件发送成功", zap.String("provider", attempt.name), zap.Strings("to", to))
+			logger.Log.Info(
+				"验证码邮件发送成功",
+				zap.String("provider", providerDisplayName(provider)),
+				zap.String("from", provider.FromEmailAddr),
+				zap.Strings("to", to),
+			)
 		}
 		return nil
 	}
@@ -335,10 +327,7 @@ func sendVerificationEmailViaSMTP(cfg config.SMTPConfig, to []string, captcha st
 
 	subject := strings.TrimSpace(config.GlobalConfig.Mail.Verification.Subject)
 	if subject == "" {
-		subject = strings.TrimSpace(config.GlobalConfig.Tencent.Ses.Subject)
-	}
-	if subject == "" {
-		subject = "CSU Star | 南极星邮箱验证码"
+		subject = defaultVerificationEmailSubject()
 	}
 
 	body := renderVerificationEmailHTML(captcha)
@@ -385,6 +374,35 @@ func isCompleteSMTPConfig(cfg config.SMTPConfig) bool {
 		strings.TrimSpace(cfg.Username) != "" &&
 		strings.TrimSpace(cfg.Password) != "" &&
 		strings.TrimSpace(cfg.FromEmailAddr) != ""
+}
+
+func verificationSMTPProviders() []config.SMTPConfig {
+	if config.GlobalConfig == nil {
+		return nil
+	}
+
+	providers := make([]config.SMTPConfig, 0, len(config.GlobalConfig.Mail.Verification.Providers))
+	for _, provider := range config.GlobalConfig.Mail.Verification.Providers {
+		if !isCompleteSMTPConfig(provider) {
+			continue
+		}
+		providers = append(providers, provider)
+	}
+	return providers
+}
+
+func providerDisplayName(cfg config.SMTPConfig) string {
+	if name := strings.TrimSpace(cfg.Name); name != "" {
+		return name
+	}
+	if from := strings.TrimSpace(cfg.FromEmailAddr); from != "" {
+		return from
+	}
+	return cfg.Host
+}
+
+func defaultVerificationEmailSubject() string {
+	return "CSU Star | 南极星邮箱验证码"
 }
 
 func dialSMTPOverTLS(addr string) (*smtp.Client, error) {

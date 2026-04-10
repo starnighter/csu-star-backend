@@ -59,7 +59,7 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) error {
 		return &constant.SendCaptchaRepeatedlyIn60sErr
 	}
 
-	// 发送验证码邮件，默认走腾讯云 SES，失败后依次降级到阿里云 DirectMail SMTP 和 QQ SMTP。
+	// 发送验证码邮件，统一走全局 SMTP provider 池轮询。
 	to := []string{normalizedEmail}
 	captcha, err := utils.GenerateCaptcha(6)
 	if err != nil {
