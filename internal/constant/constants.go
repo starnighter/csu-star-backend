@@ -65,8 +65,6 @@ var (
 	UserAutoBannedErr                   = errs.BusinessErr{Code: 1021, Msg: "账号因异常行为已被系统限制"}
 	OauthHasBeenBoundErr                = errs.BusinessErr{Code: 1022, Msg: "该第三方账号已绑定其他账号，请先使用原账号登录或先解绑"}
 	EmailNotVerifiedUploadErr           = errs.BusinessErr{Code: 1023, Msg: "未邮箱认证用户无法上传资源"}
-	CampusMailboxNotFoundErr            = errs.BusinessErr{Code: 1024, Msg: "该校园邮箱不存在，请检查校园邮箱注册时间是否已满1小时,如若未满,请先采用QQ登录,1小时后在账号内进行邮箱绑定"}
-	CampusMailboxCheckRetryErr          = errs.BusinessErr{Code: 1025, Msg: "校园邮箱状态暂时无法确认，请稍后重试"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

@@ -23,8 +23,6 @@ type AuthService struct {
 	securitySvc    *SecurityService
 }
 
-var campusMailboxStatusChecker = utils.CheckCampusMailboxStatus
-
 func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthService {
 	return &AuthService{userRepo: ur, invitationRepo: ir}
 }
@@ -46,23 +44,6 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) (string, error
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
-		}
-	}
-
-	usedDegradedProbe := false
-	mailboxStatus, err := campusMailboxStatusChecker(normalizedEmail)
-	if err != nil && logger.Log != nil {
-		logger.Log.Warn("校园邮箱 SMTP 轻量握手校验失败", zap.String("email", normalizedEmail), zap.Error(err))
-	}
-	switch mailboxStatus {
-	case utils.CampusMailboxStatusNotFound:
-		return "", &constant.CampusMailboxNotFoundErr
-	case utils.CampusMailboxStatusRetry:
-		return "", &constant.CampusMailboxCheckRetryErr
-	case utils.CampusMailboxStatusUnknown:
-		usedDegradedProbe = true
-		if logger.Log != nil {
-			logger.Log.Warn("校园邮箱 SMTP 轻量握手校验降级为仅发送验证码", zap.String("email", normalizedEmail))
 		}
 	}
 
@@ -96,10 +77,6 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) (string, error
 	// 存验证码，10min有效期
 	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 600*time.Second).Err(); err != nil {
 		return "", err
-	}
-
-	if usedDegradedProbe {
-		return "验证码已发送，请注意查收；如果暂时没收到，可以稍等片刻后再看看邮箱。", nil
 	}
 
 	return "验证码发送成功，请注意查收", nil
