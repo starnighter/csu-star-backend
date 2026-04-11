@@ -1,16 +1,11 @@
 package utils
 
 import (
-	"crypto/tls"
 	"csu-star-backend/config"
-	"errors"
-	"fmt"
-	"net"
-	"net/smtp"
-	"net/textproto"
-	"sort"
 	"strings"
 	"time"
+
+	emailverifier "github.com/AfterShip/email-verifier"
 )
 
 type CampusMailboxStatus int
@@ -22,126 +17,51 @@ const (
 	CampusMailboxStatusUnknown
 )
 
-const campusMailboxProbeTimeout = 10 * time.Second
+const campusMailboxProbeTimeout = 5 * time.Second
+
+var verifyCampusMailboxWithAfterShip = func(email string) (*emailverifier.Result, error) {
+	verifier := emailverifier.NewVerifier().
+		EnableSMTPCheck().
+		HelloName(mailboxProbeHelloName()).
+		FromEmail(verificationProbeSender()).
+		ConnectTimeout(campusMailboxProbeTimeout).
+		OperationTimeout(campusMailboxProbeTimeout)
+
+	return verifier.Verify(email)
+}
 
 func CheckCampusMailboxStatus(email string) (CampusMailboxStatus, error) {
-	domain, err := campusEmailDomain(email)
+	result, err := verifyCampusMailboxWithAfterShip(email)
 	if err != nil {
-		return CampusMailboxStatusUnknown, err
+		return classifyAfterShipVerifyError(err)
 	}
-
-	sender, err := verificationProbeSender()
-	if err != nil {
-		return CampusMailboxStatusUnknown, err
+	if result == nil {
+		return CampusMailboxStatusUnknown, nil
 	}
-
-	mxRecords, err := net.LookupMX(domain)
-	if err != nil {
-		return CampusMailboxStatusUnknown, err
+	if !result.Syntax.Valid || !result.HasMxRecords {
+		return CampusMailboxStatusUnknown, nil
 	}
-	if len(mxRecords) == 0 {
-		return CampusMailboxStatusUnknown, fmt.Errorf("no mx records found for %s", domain)
+	if result.SMTP == nil {
+		return CampusMailboxStatusUnknown, nil
 	}
-
-	sort.Slice(mxRecords, func(i, j int) bool {
-		if mxRecords[i].Pref == mxRecords[j].Pref {
-			return mxRecords[i].Host < mxRecords[j].Host
-		}
-		return mxRecords[i].Pref < mxRecords[j].Pref
-	})
-
-	var probeErrs []error
-	hasExplicitRetry := false
-	for _, mx := range mxRecords {
-		host := strings.TrimSuffix(strings.TrimSpace(mx.Host), ".")
-		if host == "" {
-			continue
-		}
-
-		status, err := probeCampusMailboxViaMX(host, sender, email)
-		if err == nil {
-			return status, nil
-		}
-		if status == CampusMailboxStatusNotFound {
-			return status, nil
-		}
-		if status == CampusMailboxStatusRetry {
-			hasExplicitRetry = true
-		}
-		probeErrs = append(probeErrs, fmt.Errorf("%s: %w", host, err))
+	if result.SMTP.Deliverable {
+		return CampusMailboxStatusExists, nil
 	}
-
-	if len(probeErrs) == 0 {
-		return CampusMailboxStatusUnknown, errors.New("no valid mx host available")
+	if strings.EqualFold(result.Reachable, "no") {
+		return CampusMailboxStatusNotFound, nil
 	}
-	if hasExplicitRetry {
-		return CampusMailboxStatusRetry, errors.Join(probeErrs...)
-	}
-	return CampusMailboxStatusUnknown, errors.Join(probeErrs...)
+	return CampusMailboxStatusUnknown, nil
 }
 
-func campusEmailDomain(email string) (string, error) {
-	at := strings.LastIndex(email, "@")
-	if at <= 0 || at == len(email)-1 {
-		return "", fmt.Errorf("invalid email address: %s", email)
-	}
-	return strings.ToLower(strings.TrimSpace(email[at+1:])), nil
-}
-
-func verificationProbeSender() (string, error) {
+func verificationProbeSender() string {
 	providers := verificationSMTPProviders()
 	if len(providers) == 0 {
-		return "", errors.New("no smtp providers configured for mailbox probe")
+		return "user@example.org"
 	}
-
-	sender := strings.TrimSpace(providers[0].FromEmailAddr)
-	if sender == "" {
-		return "", errors.New("mailbox probe sender is empty")
+	if sender := strings.TrimSpace(providers[0].FromEmailAddr); sender != "" {
+		return sender
 	}
-	return sender, nil
-}
-
-func probeCampusMailboxViaMX(mxHost, sender, recipient string) (CampusMailboxStatus, error) {
-	conn, err := (&net.Dialer{Timeout: campusMailboxProbeTimeout}).Dial("tcp", net.JoinHostPort(mxHost, "25"))
-	if err != nil {
-		return CampusMailboxStatusUnknown, err
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(campusMailboxProbeTimeout))
-
-	client, err := smtp.NewClient(conn, mxHost)
-	if err != nil {
-		return CampusMailboxStatusUnknown, err
-	}
-	defer client.Close()
-
-	if err = client.Hello(mailboxProbeHelloName()); err != nil {
-		return classifySMTPProbeError(err)
-	}
-
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		tlsConfig := &tls.Config{
-			ServerName: mxHost,
-			MinVersion: tls.VersionTLS12,
-		}
-		if err = client.StartTLS(tlsConfig); err != nil {
-			return classifySMTPProbeError(err)
-		}
-		if err = client.Hello(mailboxProbeHelloName()); err != nil {
-			return classifySMTPProbeError(err)
-		}
-	}
-
-	if err = client.Mail(sender); err != nil {
-		return classifySMTPProbeError(err)
-	}
-	if err = client.Rcpt(recipient); err != nil {
-		return classifySMTPProbeError(err)
-	}
-	if err = client.Quit(); err != nil {
-		return CampusMailboxStatusUnknown, err
-	}
-	return CampusMailboxStatusExists, nil
+	return "user@example.org"
 }
 
 func mailboxProbeHelloName() string {
@@ -155,19 +75,20 @@ func mailboxProbeHelloName() string {
 	return "localhost"
 }
 
-func classifySMTPProbeError(err error) (CampusMailboxStatus, error) {
-	var smtpErr *textproto.Error
-	if errors.As(err, &smtpErr) {
-		switch {
-		case smtpErr.Code >= 200 && smtpErr.Code < 300:
-			return CampusMailboxStatusExists, nil
-		case smtpErr.Code == 550:
-			return CampusMailboxStatusNotFound, err
-		case smtpErr.Code >= 400 && smtpErr.Code < 500:
-			return CampusMailboxStatusRetry, err
-		default:
-			return CampusMailboxStatusUnknown, err
-		}
+func classifyAfterShipVerifyError(err error) (CampusMailboxStatus, error) {
+	lookupErr, ok := err.(*emailverifier.LookupError)
+	if !ok {
+		return CampusMailboxStatusUnknown, err
 	}
-	return CampusMailboxStatusUnknown, err
+
+	switch lookupErr.Message {
+	case emailverifier.ErrTryAgainLater,
+		emailverifier.ErrMailboxBusy,
+		emailverifier.ErrExceededMessagingLimits,
+		emailverifier.ErrTooManyRCPT,
+		emailverifier.ErrFullInbox:
+		return CampusMailboxStatusRetry, err
+	default:
+		return CampusMailboxStatusUnknown, err
+	}
 }
