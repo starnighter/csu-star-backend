@@ -58,6 +58,10 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) error {
 		return &constant.CampusMailboxNotFoundErr
 	case utils.CampusMailboxStatusRetry:
 		return &constant.CampusMailboxCheckRetryErr
+	case utils.CampusMailboxStatusUnknown:
+		if logger.Log != nil {
+			logger.Log.Warn("校园邮箱 SMTP 轻量握手校验降级为仅发送验证码", zap.String("email", normalizedEmail))
+		}
 	}
 
 	// 检查是否在60s内重复调用
