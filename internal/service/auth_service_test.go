@@ -203,6 +203,46 @@ func TestLoginRejectsBannedUserWithoutSecurityService(t *testing.T) {
 	}
 }
 
+func TestSendCaptchaRejectsMissingCampusMailbox(t *testing.T) {
+	originalChecker := campusMailboxStatusChecker
+	campusMailboxStatusChecker = func(email string) (utils.CampusMailboxStatus, error) {
+		return utils.CampusMailboxStatusNotFound, nil
+	}
+	t.Cleanup(func() {
+		campusMailboxStatusChecker = originalChecker
+	})
+
+	userRepo := &authUserRepositoryStub{
+		findUserByEmailErr: gorm.ErrRecordNotFound,
+	}
+	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+	err := service.SendCaptcha("test@csu.edu.cn", true)
+	if !errors.Is(err, &constant.CampusMailboxNotFoundErr) {
+		t.Fatalf("expected campus mailbox not found error, got %v", err)
+	}
+}
+
+func TestSendCaptchaReturnsRetryWhenMailboxProbeIsTemporary(t *testing.T) {
+	originalChecker := campusMailboxStatusChecker
+	campusMailboxStatusChecker = func(email string) (utils.CampusMailboxStatus, error) {
+		return utils.CampusMailboxStatusRetry, errors.New("451 temporary failure")
+	}
+	t.Cleanup(func() {
+		campusMailboxStatusChecker = originalChecker
+	})
+
+	userRepo := &authUserRepositoryStub{
+		findUserByEmailErr: gorm.ErrRecordNotFound,
+	}
+	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+	err := service.SendCaptcha("test@csu.edu.cn", true)
+	if !errors.Is(err, &constant.CampusMailboxCheckRetryErr) {
+		t.Fatalf("expected campus mailbox retry error, got %v", err)
+	}
+}
+
 func stringPtr(value string) *string {
 	return &value
 }
