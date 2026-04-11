@@ -59,7 +59,7 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		return
 	}
 	_, isNotExists := c.Get(constant.GinUserID)
-	err := h.authSvc.SendCaptcha(r.Email, isNotExists)
+	msg, err := h.authSvc.SendCaptcha(r.Email, isNotExists)
 	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
 		return
@@ -85,7 +85,7 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		return
 	}
 
-	resp.SuccessMsg(c, "验证码发送成功，请注意查收")
+	resp.SuccessMsg(c, msg)
 }
 
 func (h *AuthHandler) VerifyCaptcha(c *gin.Context) {

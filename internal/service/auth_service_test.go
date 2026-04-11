@@ -217,7 +217,7 @@ func TestSendCaptchaRejectsMissingCampusMailbox(t *testing.T) {
 	}
 	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
 
-	err := service.SendCaptcha("test@csu.edu.cn", true)
+	_, err := service.SendCaptcha("test@csu.edu.cn", true)
 	if !errors.Is(err, &constant.CampusMailboxNotFoundErr) {
 		t.Fatalf("expected campus mailbox not found error, got %v", err)
 	}
@@ -237,7 +237,7 @@ func TestSendCaptchaReturnsRetryWhenMailboxProbeIsTemporary(t *testing.T) {
 	}
 	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
 
-	err := service.SendCaptcha("test@csu.edu.cn", true)
+	_, err := service.SendCaptcha("test@csu.edu.cn", true)
 	if !errors.Is(err, &constant.CampusMailboxCheckRetryErr) {
 		t.Fatalf("expected campus mailbox retry error, got %v", err)
 	}
