@@ -23,6 +23,8 @@ type AuthService struct {
 	securitySvc    *SecurityService
 }
 
+var campusMailboxStatusChecker = utils.CheckCampusMailboxStatus
+
 func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthService {
 	return &AuthService{userRepo: ur, invitationRepo: ir}
 }
@@ -45,6 +47,17 @@ func (s *AuthService) SendCaptcha(email string, isNotExists bool) error {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+	}
+
+	mailboxStatus, err := campusMailboxStatusChecker(normalizedEmail)
+	if err != nil && logger.Log != nil {
+		logger.Log.Warn("校园邮箱 SMTP 轻量握手校验失败", zap.String("email", normalizedEmail), zap.Error(err))
+	}
+	switch mailboxStatus {
+	case utils.CampusMailboxStatusNotFound:
+		return &constant.CampusMailboxNotFoundErr
+	case utils.CampusMailboxStatusRetry:
+		return &constant.CampusMailboxCheckRetryErr
 	}
 
 	// 检查是否在60s内重复调用

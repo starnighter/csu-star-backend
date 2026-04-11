@@ -72,6 +72,14 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserHasRegisteredErr.Code, constant.UserHasRegisteredErr.Msg)
 		return
 	}
+	if errors.Is(err, &constant.CampusMailboxNotFoundErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.CampusMailboxNotFoundErr.Code, constant.CampusMailboxNotFoundErr.Msg)
+		return
+	}
+	if errors.Is(err, &constant.CampusMailboxCheckRetryErr) {
+		resp.FailWithCode(c, http.StatusServiceUnavailable, constant.CampusMailboxCheckRetryErr.Code, constant.CampusMailboxCheckRetryErr.Msg)
+		return
+	}
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
