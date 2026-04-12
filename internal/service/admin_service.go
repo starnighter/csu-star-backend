@@ -765,7 +765,7 @@ func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announce
 			return nil, err
 		}
 		if input.IsPublished {
-			if err := adminRepo.CreateNotification(buildAnnouncementNotification(input)); err != nil {
+			if err := adminRepo.CreateNotification(buildAnnouncementNotification(input, operatorID)); err != nil {
 				return nil, err
 			}
 		}
@@ -808,7 +808,7 @@ func (s *AdminService) UpdateAnnouncement(operatorID, id int64, updates map[stri
 			return nil, err
 		}
 		if shouldBroadcastAnnouncementUpdate(wasPublished, oldTitle, oldContent, item) {
-			if err := adminRepo.CreateNotification(buildAnnouncementNotification(*item)); err != nil {
+			if err := adminRepo.CreateNotification(buildAnnouncementNotification(*item, operatorID)); err != nil {
 				return nil, err
 			}
 		}

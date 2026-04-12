@@ -16,9 +16,9 @@ type interactionRoute struct {
 	replyID      int64
 }
 
-func buildAnnouncementNotification(item model.Announcements) *model.Notifications {
+func buildAnnouncementNotification(item model.Announcements, actorUserID int64) *model.Notifications {
 	return &model.Notifications{
-		UserID:    0,
+		UserID:    actorUserID,
 		Type:      model.NotificationTypeSystem,
 		Category:  model.NotificationCategoryAnnouncement,
 		Result:    model.NotificationResultInform,
