@@ -147,6 +147,7 @@ type AdminAnnouncementItem struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
 }
 
 type AdminCourseItem struct {
@@ -572,11 +573,11 @@ func (r *adminRepository) AdjustUserPoints(userID int64, delta int, reason strin
 func (r *adminRepository) ListAnnouncements(page, size int) ([]AdminAnnouncementItem, int64, error) {
 	var items []AdminAnnouncementItem
 	var total int64
-	base := r.db.Table("announcements")
+	base := r.db.Unscoped().Table("announcements")
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select("id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at").
+	err := base.Select("id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at, deleted_at").
 		Order("is_pinned DESC").
 		Order("created_at DESC").
 		Offset((page - 1) * size).

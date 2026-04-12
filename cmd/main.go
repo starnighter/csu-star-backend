@@ -80,6 +80,9 @@ func main() {
 	if err := ensureEvaluationVisibilityIndexes(db); err != nil {
 		logger.Log.Error("补齐评价可见性索引失败：", zap.Error(err))
 	}
+	if err := ensureAnnouncementSoftDelete(db); err != nil {
+		logger.Log.Error("补齐公告软删除字段失败：", zap.Error(err))
+	}
 	if err := ensureNotificationInfrastructure(db); err != nil {
 		logger.Log.Error("补齐通知基础设施失败：", zap.Error(err))
 	}
@@ -513,6 +516,16 @@ func ensureEvaluationVisibilityIndexes(db *gorm.DB) error {
 			ON teacher_evaluations (user_id, mode, course_id, teacher_id);
 		CREATE INDEX IF NOT EXISTS idx_course_evaluations_user_mode_course_teacher
 			ON course_evaluations (user_id, mode, course_id, teacher_id);
+	`).Error
+}
+
+func ensureAnnouncementSoftDelete(db *gorm.DB) error {
+	return db.Exec(`
+		ALTER TABLE announcements
+			ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+		CREATE INDEX IF NOT EXISTS idx_announcements_deleted_at
+			ON announcements (deleted_at);
 	`).Error
 }
 
