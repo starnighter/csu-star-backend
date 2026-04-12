@@ -60,7 +60,8 @@ type JWTConfig struct {
 }
 
 type SecurityConfig struct {
-	Mode string `mapstructure:"mode"`
+	Mode                     string `mapstructure:"mode"`
+	ResourceRateLimitEnabled bool   `mapstructure:"resource_rate_limit_enabled"`
 }
 
 type SnowflakeConfig struct {
@@ -132,6 +133,7 @@ func Init() error {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+	viper.SetDefault("security.resource_rate_limit_enabled", true)
 
 	if err := viper.ReadInConfig(); err != nil {
 		logger.Log.Error("读取配置文件失败：", zap.Error(err))
