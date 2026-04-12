@@ -468,6 +468,7 @@ func (r *miscRepository) ListMyContributionEvents(userID int64, start, end time.
 func (r *miscRepository) ListAnnouncements() ([]AnnouncementItem, error) {
 	var items []AnnouncementItem
 	err := r.db.Table("announcements").
+		Where("deleted_at IS NULL").
 		Where("is_published = ? AND (expires_at IS NULL OR expires_at > ?)", true, time.Now()).
 		Select("id, title, content, type, is_pinned, published_at").
 		Order("is_pinned DESC").Order("published_at DESC").Scan(&items).Error
@@ -890,7 +891,16 @@ func (r *miscRepository) MarkNotificationRead(userID, notificationID int64) erro
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var item model.Notifications
 		if err := tx.Select("id", "user_id", "is_global").
-			Where("id = ? AND created_at >= ? AND (((user_id = ? AND is_global = FALSE) OR is_global = TRUE))", notificationID, cutoff, userID).
+			Where(`
+				id = ? AND created_at >= ? AND (
+					(user_id = ? AND is_global = FALSE) OR (
+						is_global = TRUE AND EXISTS (
+							SELECT 1 FROM announcements a
+							WHERE a.id = notifications.related_id AND a.deleted_at IS NULL
+						)
+					)
+				)
+			`, notificationID, cutoff, userID).
 			First(&item).Error; err != nil {
 			return err
 		}
@@ -916,12 +926,13 @@ func (r *miscRepository) MarkAllNotificationsRead(userID int64) error {
 		}
 
 		return tx.Exec(`
-			INSERT INTO global_notification_reads (notification_id, user_id, created_at)
-			SELECT n.id, ?, NOW()
-			FROM notifications n
-			WHERE n.is_global = TRUE AND n.created_at >= ?
-			ON CONFLICT (notification_id, user_id) DO NOTHING
-		`, userID, cutoff).Error
+				INSERT INTO global_notification_reads (notification_id, user_id, created_at)
+				SELECT n.id, ?, NOW()
+				FROM notifications n
+				JOIN announcements a ON a.id = n.related_id AND a.deleted_at IS NULL
+				WHERE n.is_global = TRUE AND n.created_at >= ?
+				ON CONFLICT (notification_id, user_id) DO NOTHING
+			`, userID, cutoff).Error
 	})
 }
 
@@ -972,9 +983,9 @@ func (r *miscRepository) notificationsBaseQuery(userID int64) *gorm.DB {
 	cutoff := NotificationRetentionCutoff(time.Now())
 	return r.db.Table("notifications AS n").
 		Joins("LEFT JOIN global_notification_reads AS gnr ON gnr.notification_id = n.id AND gnr.user_id = ?", userID).
-		Joins("LEFT JOIN announcements AS a ON a.id = n.related_id AND n.is_global = TRUE").
+		Joins("LEFT JOIN announcements AS a ON a.id = n.related_id AND n.is_global = TRUE AND a.deleted_at IS NULL").
 		Where("n.created_at >= ?", cutoff).
-		Where("(n.user_id = ? AND n.is_global = FALSE) OR n.is_global = TRUE", userID)
+		Where("(n.user_id = ? AND n.is_global = FALSE) OR (n.is_global = TRUE AND a.id IS NOT NULL)", userID)
 }
 
 func notificationSelectColumns(notificationAlias, readAlias string) string {

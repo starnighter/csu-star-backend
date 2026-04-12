@@ -4,6 +4,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type AnnouncementType string
@@ -44,4 +46,5 @@ type Announcements struct {
 	ExpiresAt   time.Time        `gorm:"type:timestamptz" json:"expires_at"`
 	CreatedAt   time.Time        `gorm:"type:autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time        `gorm:"type:autoUpdateTime" json:"updated_at"`
+	DeletedAt   gorm.DeletedAt   `gorm:"index" json:"-"`
 }
