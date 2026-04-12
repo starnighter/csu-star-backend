@@ -33,6 +33,7 @@ jwt:
 
 security:
   mode: "enforce"
+  resource_rate_limit_enabled: false
 
 snowflake:
   nodeID: 1

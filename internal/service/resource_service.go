@@ -1,6 +1,7 @@
 package service
 
 import (
+	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
@@ -83,6 +84,13 @@ func NewResourceService(db *gorm.DB, rr repo.ResourceRepository, cr repo.CourseR
 
 func (s *ResourceService) SetSecurityService(securitySvc *SecurityService) {
 	s.securitySvc = securitySvc
+}
+
+func (s *ResourceService) resourceRateLimitEnabled() bool {
+	if config.GlobalConfig == nil {
+		return true
+	}
+	return config.GlobalConfig.Security.ResourceRateLimitEnabled
 }
 
 func (s *ResourceService) ListResources(query repo.ResourceListQuery) ([]repo.ResourceListItem, int64, error) {
@@ -603,6 +611,9 @@ func (s *ResourceService) cleanupUploadSessionObjects(session *ResourceUploadSes
 }
 
 func (s *ResourceService) enforceSingleWindowLimit(userID int64, scope string, limit int64, window time.Duration) error {
+	if !s.resourceRateLimitEnabled() {
+		return nil
+	}
 	if s.securitySvc == nil || userID <= 0 {
 		return nil
 	}
@@ -621,6 +632,9 @@ func (s *ResourceService) enforceSingleWindowLimit(userID int64, scope string, l
 }
 
 func (s *ResourceService) enforceUploadRateLimit(userID int64, files []UploadedResourceFile) error {
+	if !s.resourceRateLimitEnabled() {
+		return nil
+	}
 	if s.securitySvc == nil || userID <= 0 {
 		return nil
 	}
