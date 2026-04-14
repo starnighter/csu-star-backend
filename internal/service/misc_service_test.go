@@ -6,15 +6,19 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type miscRepositoryStub struct {
-	events                []repo.ContributionEvent
-	feedback              *model.Feedbacks
-	report                *model.Reports
-	correction            *model.Corrections
-	supplementRequest     *model.SupplementRequests
-	supplementRequestView *repo.SupplementRequestItem
+	events                   []repo.ContributionEvent
+	feedback                 *model.Feedbacks
+	report                   *model.Reports
+	correction               *model.Corrections
+	teacherSupplementRequest *model.TeacherSupplementRequests
+	courseSupplementRequest  *model.CourseSupplementRequests
+	teacherSupplementView    *repo.TeacherSupplementRequestItem
+	courseSupplementView     *repo.CourseSupplementRequestItem
 }
 
 func (m *miscRepositoryStub) GetMe(userID int64) (*repo.MeProfile, error) {
@@ -100,42 +104,82 @@ func (m *miscRepositoryStub) PurgeExpiredNotifications(now time.Time) error {
 	return nil
 }
 
-func (m *miscRepositoryStub) CreateSupplementRequest(request *model.SupplementRequests) error {
-	m.supplementRequest = request
+func (m *miscRepositoryStub) CreateTeacherSupplementRequest(request *model.TeacherSupplementRequests) error {
+	m.teacherSupplementRequest = request
 	if request.ID == 0 {
 		request.ID = 1
 	}
 	return nil
 }
 
-func (m *miscRepositoryStub) GetSupplementRequestByID(id int64) (*repo.SupplementRequestItem, error) {
-	if m.supplementRequestView != nil {
-		return m.supplementRequestView, nil
+func (m *miscRepositoryStub) GetTeacherSupplementRequestByID(id int64) (*repo.TeacherSupplementRequestItem, error) {
+	if m.teacherSupplementView != nil {
+		return m.teacherSupplementView, nil
 	}
-	if m.supplementRequest == nil {
-		return nil, nil
+	if m.teacherSupplementRequest == nil || m.teacherSupplementRequest.ID != id {
+		return nil, gorm.ErrRecordNotFound
 	}
-	return &repo.SupplementRequestItem{
-		ID:           m.supplementRequest.ID,
-		UserID:       m.supplementRequest.UserID,
-		RequestType:  string(m.supplementRequest.RequestType),
-		Status:       string(m.supplementRequest.Status),
-		Contact:      m.supplementRequest.Contact,
-		TeacherName:  m.supplementRequest.TeacherName,
-		DepartmentID: m.supplementRequest.DepartmentID,
-		CourseName:   m.supplementRequest.CourseName,
-		CourseType:   m.supplementRequest.CourseType,
-		Remark:       m.supplementRequest.Remark,
+	return &repo.TeacherSupplementRequestItem{
+		ID:           m.teacherSupplementRequest.ID,
+		UserID:       m.teacherSupplementRequest.UserID,
+		Status:       string(m.teacherSupplementRequest.Status),
+		Contact:      m.teacherSupplementRequest.Contact,
+		TeacherName:  m.teacherSupplementRequest.TeacherName,
+		DepartmentID: m.teacherSupplementRequest.DepartmentID,
+		Remark:       m.teacherSupplementRequest.Remark,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}, nil
 }
 
-func (m *miscRepositoryStub) ListSupplementRequests(query repo.SupplementRequestListQuery) ([]repo.SupplementRequestItem, int64, error) {
-	if m.supplementRequestView == nil {
+func (m *miscRepositoryStub) ListTeacherSupplementRequests(query repo.SupplementRequestListQuery) ([]repo.TeacherSupplementRequestItem, int64, error) {
+	if m.teacherSupplementView == nil {
 		return nil, 0, nil
 	}
-	return []repo.SupplementRequestItem{*m.supplementRequestView}, 1, nil
+	return []repo.TeacherSupplementRequestItem{*m.teacherSupplementView}, 1, nil
+}
+
+func (m *miscRepositoryStub) UpdateTeacherSupplementRequest(id int64, updates map[string]interface{}) error {
+	return nil
+}
+
+func (m *miscRepositoryStub) CreateCourseSupplementRequest(request *model.CourseSupplementRequests) error {
+	m.courseSupplementRequest = request
+	if request.ID == 0 {
+		request.ID = 2
+	}
+	return nil
+}
+
+func (m *miscRepositoryStub) GetCourseSupplementRequestByID(id int64) (*repo.CourseSupplementRequestItem, error) {
+	if m.courseSupplementView != nil {
+		return m.courseSupplementView, nil
+	}
+	if m.courseSupplementRequest == nil || m.courseSupplementRequest.ID != id {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &repo.CourseSupplementRequestItem{
+		ID:         m.courseSupplementRequest.ID,
+		UserID:     m.courseSupplementRequest.UserID,
+		Status:     string(m.courseSupplementRequest.Status),
+		Contact:    m.courseSupplementRequest.Contact,
+		CourseName: m.courseSupplementRequest.CourseName,
+		CourseType: string(m.courseSupplementRequest.CourseType),
+		Remark:     m.courseSupplementRequest.Remark,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}, nil
+}
+
+func (m *miscRepositoryStub) ListCourseSupplementRequests(query repo.SupplementRequestListQuery) ([]repo.CourseSupplementRequestItem, int64, error) {
+	if m.courseSupplementView == nil {
+		return nil, 0, nil
+	}
+	return []repo.CourseSupplementRequestItem{*m.courseSupplementView}, 1, nil
+}
+
+func (m *miscRepositoryStub) UpdateCourseSupplementRequest(id int64, updates map[string]interface{}) error {
+	return nil
 }
 
 type socialRepositoryStub struct {
@@ -440,11 +484,6 @@ func TestCreateSupplementRequestTeacher(t *testing.T) {
 		"张老师",
 		ptrInt16(1),
 		"",
-		[]string{"101"},
-		[]string{"高等数学"},
-		nil,
-		nil,
-		"",
 		"",
 		"希望补录",
 	)
@@ -452,15 +491,15 @@ func TestCreateSupplementRequestTeacher(t *testing.T) {
 		t.Fatalf("CreateSupplementRequest() error = %v", err)
 	}
 
-	if item == nil || repoStub.supplementRequest == nil {
+	if item == nil || repoStub.teacherSupplementRequest == nil {
 		t.Fatalf("expected supplement request to be created")
 	}
 
-	if repoStub.supplementRequest.RequestType != model.SupplementRequestTypeTeacher {
-		t.Fatalf("expected request type teacher, got %s", repoStub.supplementRequest.RequestType)
+	if item.RequestType != "teacher" {
+		t.Fatalf("expected request type teacher, got %s", item.RequestType)
 	}
 
-	if repoStub.supplementRequest.DepartmentID == nil || *repoStub.supplementRequest.DepartmentID != 1 {
+	if repoStub.teacherSupplementRequest.DepartmentID != 1 {
 		t.Fatalf("expected department id to be preserved")
 	}
 }
@@ -473,11 +512,6 @@ func TestCreateSupplementRequestCourseRejectsInvalidCourseType(t *testing.T) {
 		"course",
 		"test@example.com",
 		"",
-		nil,
-		"",
-		nil,
-		nil,
-		nil,
 		nil,
 		"大学英语",
 		"未知类型",
@@ -495,7 +529,7 @@ func ptrInt16(value int16) *int16 {
 	return &value
 }
 
-func TestCreateSupplementRequestCourseAllowsOptionalRelatedTeachers(t *testing.T) {
+func TestCreateSupplementRequestCourse(t *testing.T) {
 	repoStub := &miscRepositoryStub{}
 	service := NewMiscService(nil, repoStub, &socialRepositoryStub{}, &invitationRepositoryStub{})
 
@@ -505,86 +539,86 @@ func TestCreateSupplementRequestCourseAllowsOptionalRelatedTeachers(t *testing.T
 		"test@example.com",
 		"",
 		nil,
-		"",
-		nil,
-		nil,
-		[]string{"201", "202", "201"},
-		[]string{"张老师", "李老师", "张老师"},
 		"大学英语",
-		"公选课",
+		"public",
 		"",
 	)
 	if err != nil {
 		t.Fatalf("CreateSupplementRequest() error = %v", err)
 	}
 
-	if item == nil || repoStub.supplementRequest == nil {
+	if item == nil || repoStub.courseSupplementRequest == nil {
 		t.Fatalf("expected supplement request to be created")
 	}
 
-	if string(repoStub.supplementRequest.RelatedTeacherNames) != "[\"张老师\",\"李老师\"]" {
-		t.Fatalf("expected related teacher names to be normalized, got %s", string(repoStub.supplementRequest.RelatedTeacherNames))
+	if item.RequestType != "course" {
+		t.Fatalf("expected request type course, got %s", item.RequestType)
 	}
-	if string(repoStub.supplementRequest.RelatedTeacherIDs) != "[201,202]" {
-		t.Fatalf("expected related teacher ids to be normalized, got %s", string(repoStub.supplementRequest.RelatedTeacherIDs))
-	}
-}
-
-func TestCreateSupplementRequestTeacherAllowsOptionalRelatedCourses(t *testing.T) {
-	repoStub := &miscRepositoryStub{}
-	service := NewMiscService(nil, repoStub, &socialRepositoryStub{}, &invitationRepositoryStub{})
-
-	item, err := service.CreateSupplementRequest(
-		1,
-		"teacher",
-		"test@example.com",
-		"张老师",
-		ptrInt16(1),
-		"",
-		[]string{"301", "302", "301"},
-		[]string{"高等数学", "线性代数", "高等数学"},
-		nil,
-		nil,
-		"",
-		"",
-		"",
-	)
-	if err != nil {
-		t.Fatalf("CreateSupplementRequest() error = %v", err)
-	}
-
-	if item == nil || repoStub.supplementRequest == nil {
-		t.Fatalf("expected supplement request to be created")
-	}
-
-	if string(repoStub.supplementRequest.RelatedCourseNames) != "[\"高等数学\",\"线性代数\"]" {
-		t.Fatalf("expected related course names to be normalized, got %s", string(repoStub.supplementRequest.RelatedCourseNames))
-	}
-	if string(repoStub.supplementRequest.RelatedCourseIDs) != "[301,302]" {
-		t.Fatalf("expected related course ids to be normalized, got %s", string(repoStub.supplementRequest.RelatedCourseIDs))
+	if repoStub.courseSupplementRequest.CourseType != model.CourseTypePublic {
+		t.Fatalf("expected course type public, got %s", repoStub.courseSupplementRequest.CourseType)
 	}
 }
 
-func TestCreateSupplementRequestRejectsMismatchedRelationPairs(t *testing.T) {
+func TestCreateSupplementRequestTeacherRejectsMissingDepartment(t *testing.T) {
 	service := NewMiscService(nil, &miscRepositoryStub{}, &socialRepositoryStub{}, &invitationRepositoryStub{})
 
 	_, err := service.CreateSupplementRequest(
 		1,
-		"course",
+		"teacher",
 		"test@example.com",
-		"",
+		"张老师",
 		nil,
 		"",
-		nil,
-		nil,
-		[]string{"201"},
-		[]string{"张老师", "李老师"},
-		"大学英语",
-		"公选课",
+		"",
 		"",
 	)
 	if !errors.Is(err, ErrSupplementRequestInvalidPayload) {
 		t.Fatalf("expected ErrSupplementRequestInvalidPayload, got %v", err)
+	}
+}
+
+func TestListSupplementRequestsMergesBothKinds(t *testing.T) {
+	now := time.Now()
+	repoStub := &miscRepositoryStub{
+		teacherSupplementView: &repo.TeacherSupplementRequestItem{
+			ID:             1,
+			UserID:         10,
+			Status:         "pending",
+			Contact:        "teacher@test.com",
+			TeacherName:    "张老师",
+			DepartmentID:   1,
+			DepartmentName: "计算机学院",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		courseSupplementView: &repo.CourseSupplementRequestItem{
+			ID:         2,
+			UserID:     11,
+			Status:     "pending",
+			Contact:    "course@test.com",
+			CourseName: "大学英语",
+			CourseType: "public",
+			CreatedAt:  now.Add(-time.Minute),
+			UpdatedAt:  now.Add(-time.Minute),
+		},
+	}
+	service := NewMiscService(nil, repoStub, &socialRepositoryStub{}, &invitationRepositoryStub{})
+
+	items, total, err := service.ListSupplementRequests(repo.SupplementRequestListQuery{
+		Page: 1,
+		Size: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListSupplementRequests() error = %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected total 2, got %d", total)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].RequestType != "teacher" || items[1].RequestType != "course" {
+		t.Fatalf("expected teacher then course ordering, got %s then %s", items[0].RequestType, items[1].RequestType)
 	}
 }
 

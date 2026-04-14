@@ -129,12 +129,30 @@ func buildFeedbackReplyNotification(item *model.Feedbacks) *model.Notifications 
 	}
 }
 
-func buildSupplementReviewNotification(userID int64, request *model.SupplementRequests, approved bool, content string) *model.Notifications {
+func buildTeacherSupplementReviewNotification(userID int64, request *model.TeacherSupplementRequests, approved bool, content string) *model.Notifications {
 	result := model.NotificationResultRejected
-	title := "补录申请未通过"
+	title := "教师补录申请未通过"
 	if approved {
 		result = model.NotificationResultApproved
-		title = "补录申请已通过"
+		title = "教师补录申请已通过"
+	}
+	return &model.Notifications{
+		UserID:    userID,
+		Type:      model.NotificationTypeSystem,
+		Category:  model.NotificationCategorySupplement,
+		Result:    result,
+		Title:     title,
+		Content:   strings.TrimSpace(content),
+		RelatedID: request.ID,
+	}
+}
+
+func buildCourseSupplementReviewNotification(userID int64, request *model.CourseSupplementRequests, approved bool, content string) *model.Notifications {
+	result := model.NotificationResultRejected
+	title := "课程补录申请未通过"
+	if approved {
+		result = model.NotificationResultApproved
+		title = "课程补录申请已通过"
 	}
 	return &model.Notifications{
 		UserID:    userID,
@@ -202,6 +220,14 @@ func buildPointsChangedNotification(userID int64, reason string) *model.Notifica
 		Content:   strings.TrimSpace(reason),
 		RelatedID: 0,
 	}
+}
+
+func mustJSON(value interface{}) datatypes.JSON {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return datatypes.JSON([]byte("{}"))
+	}
+	return datatypes.JSON(data)
 }
 
 func buildReadPointsNotification(userID int64, title, content string, relatedID int64) *model.Notifications {
