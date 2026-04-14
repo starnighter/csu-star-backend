@@ -166,9 +166,14 @@ type MiscRepository interface {
 	MarkAllNotificationsRead(userID int64) error
 	CreateNotification(notification *model.Notifications) error
 	PurgeExpiredNotifications(now time.Time) error
-	CreateSupplementRequest(request *model.SupplementRequests) error
-	GetSupplementRequestByID(id int64) (*SupplementRequestItem, error)
-	ListSupplementRequests(query SupplementRequestListQuery) ([]SupplementRequestItem, int64, error)
+	CreateTeacherSupplementRequest(request *model.TeacherSupplementRequests) error
+	GetTeacherSupplementRequestByID(id int64) (*TeacherSupplementRequestItem, error)
+	ListTeacherSupplementRequests(query SupplementRequestListQuery) ([]TeacherSupplementRequestItem, int64, error)
+	UpdateTeacherSupplementRequest(id int64, updates map[string]interface{}) error
+	CreateCourseSupplementRequest(request *model.CourseSupplementRequests) error
+	GetCourseSupplementRequestByID(id int64) (*CourseSupplementRequestItem, error)
+	ListCourseSupplementRequests(query SupplementRequestListQuery) ([]CourseSupplementRequestItem, int64, error)
+	UpdateCourseSupplementRequest(id int64, updates map[string]interface{}) error
 }
 
 type miscRepository struct {

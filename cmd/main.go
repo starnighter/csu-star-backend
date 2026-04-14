@@ -68,8 +68,11 @@ func main() {
 	if err := removeDeprecatedSemesterColumns(db); err != nil {
 		logger.Log.Error("移除废弃学期字段失败：", zap.Error(err))
 	}
-	if err := ensureSupplementRequestTable(db); err != nil {
-		logger.Log.Error("补齐补录申请表失败：", zap.Error(err))
+	if err := ensureTeacherSupplementRequestTable(db); err != nil {
+		logger.Log.Error("补齐教师补录申请表失败：", zap.Error(err))
+	}
+	if err := ensureCourseSupplementRequestTable(db); err != nil {
+		logger.Log.Error("补齐课程补录申请表失败：", zap.Error(err))
 	}
 	if err := ensureCourseTeacherStatusColumns(db); err != nil {
 		logger.Log.Error("补齐课程教师状态字段失败：", zap.Error(err))
@@ -403,63 +406,90 @@ func removeDeprecatedSemesterColumns(db *gorm.DB) error {
 	`).Error
 }
 
-func ensureSupplementRequestTable(db *gorm.DB) error {
+func ensureTeacherSupplementRequestTable(db *gorm.DB) error {
 	return db.Exec(`
-		CREATE TABLE IF NOT EXISTS supplement_requests (
+		CREATE TABLE IF NOT EXISTS teacher_supplement_requests (
 			id BIGINT PRIMARY KEY,
 			user_id BIGINT NOT NULL,
-			request_type VARCHAR(16) NOT NULL,
 			status VARCHAR(16) NOT NULL DEFAULT 'pending',
 			contact VARCHAR(128) NOT NULL,
-			teacher_name VARCHAR(128),
-			department_id SMALLINT,
-			related_course_name VARCHAR(128),
-			related_course_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			related_course_names JSONB NOT NULL DEFAULT '[]'::jsonb,
-			related_teacher_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			related_teacher_names JSONB NOT NULL DEFAULT '[]'::jsonb,
-			course_name VARCHAR(128),
-			course_type VARCHAR(16),
+			teacher_name VARCHAR(128) NOT NULL,
+			department_id SMALLINT NOT NULL,
 			remark TEXT,
 			reviewed_by BIGINT,
 			reviewed_at TIMESTAMPTZ,
 			review_note TEXT,
-			approved_target_type VARCHAR(16),
-			approved_target_id BIGINT,
+			approved_teacher_id BIGINT,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CONSTRAINT chk_supplement_request_type CHECK (request_type IN ('teacher', 'course')),
-			CONSTRAINT chk_supplement_request_status CHECK (status IN ('pending', 'approved', 'rejected')),
-			CONSTRAINT chk_supplement_course_type CHECK (
-				course_type IS NULL OR course_type IN ('public', 'non_public')
-			)
+			CONSTRAINT chk_teacher_supplement_request_status CHECK (status IN ('pending', 'approved', 'rejected'))
 		);
 
-		ALTER TABLE supplement_requests
+		ALTER TABLE teacher_supplement_requests
 			ADD COLUMN IF NOT EXISTS teacher_name VARCHAR(128),
 			ADD COLUMN IF NOT EXISTS department_id SMALLINT,
-			ADD COLUMN IF NOT EXISTS related_course_name VARCHAR(128),
-			ADD COLUMN IF NOT EXISTS related_course_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			ADD COLUMN IF NOT EXISTS related_course_names JSONB NOT NULL DEFAULT '[]'::jsonb,
-			ADD COLUMN IF NOT EXISTS related_teacher_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			ADD COLUMN IF NOT EXISTS related_teacher_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+			ADD COLUMN IF NOT EXISTS remark TEXT,
+			ADD COLUMN IF NOT EXISTS reviewed_by BIGINT,
+			ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+			ADD COLUMN IF NOT EXISTS review_note TEXT,
+			ADD COLUMN IF NOT EXISTS approved_teacher_id BIGINT,
+			ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+		CREATE INDEX IF NOT EXISTS idx_teacher_supplement_requests_status_created_at
+			ON teacher_supplement_requests (status, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_teacher_supplement_requests_user_id_created_at
+			ON teacher_supplement_requests (user_id, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_teacher_supplement_requests_department_status_created_at
+			ON teacher_supplement_requests (department_id, status, created_at DESC);
+	`).Error
+}
+
+func ensureCourseSupplementRequestTable(db *gorm.DB) error {
+	return db.Exec(`
+		CREATE TABLE IF NOT EXISTS course_supplement_requests (
+			id BIGINT PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			status VARCHAR(16) NOT NULL DEFAULT 'pending',
+			contact VARCHAR(128) NOT NULL,
+			course_name VARCHAR(128) NOT NULL,
+			course_type VARCHAR(16) NOT NULL,
+			remark TEXT,
+			reviewed_by BIGINT,
+			reviewed_at TIMESTAMPTZ,
+			review_note TEXT,
+			approved_course_id BIGINT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CONSTRAINT chk_course_supplement_request_status CHECK (status IN ('pending', 'approved', 'rejected')),
+			CONSTRAINT chk_course_supplement_request_course_type CHECK (course_type IN ('public', 'non_public'))
+		);
+
+		ALTER TABLE course_supplement_requests
 			ADD COLUMN IF NOT EXISTS course_name VARCHAR(128),
 			ADD COLUMN IF NOT EXISTS course_type VARCHAR(16),
 			ADD COLUMN IF NOT EXISTS remark TEXT,
 			ADD COLUMN IF NOT EXISTS reviewed_by BIGINT,
 			ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
 			ADD COLUMN IF NOT EXISTS review_note TEXT,
-			ADD COLUMN IF NOT EXISTS approved_target_type VARCHAR(16),
-			ADD COLUMN IF NOT EXISTS approved_target_id BIGINT,
+			ADD COLUMN IF NOT EXISTS approved_course_id BIGINT,
 			ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-		CREATE INDEX IF NOT EXISTS idx_supplement_requests_status_created_at
-			ON supplement_requests (status, created_at DESC);
-		CREATE INDEX IF NOT EXISTS idx_supplement_requests_user_id_created_at
-			ON supplement_requests (user_id, created_at DESC);
-		CREATE INDEX IF NOT EXISTS idx_supplement_requests_type_status_created_at
-			ON supplement_requests (request_type, status, created_at DESC);
+		ALTER TABLE course_supplement_requests
+			DROP CONSTRAINT IF EXISTS chk_course_supplement_request_course_type;
+
+		ALTER TABLE course_supplement_requests
+			ADD CONSTRAINT chk_course_supplement_request_course_type CHECK (
+				course_type IN ('public', 'non_public')
+			);
+
+		CREATE INDEX IF NOT EXISTS idx_course_supplement_requests_status_created_at
+			ON course_supplement_requests (status, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_course_supplement_requests_user_id_created_at
+			ON course_supplement_requests (user_id, created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_course_supplement_requests_course_type_status_created_at
+			ON course_supplement_requests (course_type, status, created_at DESC);
 	`).Error
 }
 

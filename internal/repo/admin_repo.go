@@ -304,7 +304,11 @@ func (r *adminRepository) GetStatistics() (*AdminStatistics, error) {
 			(SELECT COUNT(*) FROM reports WHERE status = 'pending') AS pending_reports_count,
 			(SELECT COUNT(*) FROM corrections WHERE status = 'pending') AS pending_corrections_count,
 			(SELECT COUNT(*) FROM feedbacks WHERE status IN ('pending', 'processing')) AS pending_feedbacks_count,
-			(SELECT COUNT(*) FROM supplement_requests WHERE status = 'pending') AS pending_supplement_requests_count,
+			(
+				(SELECT COUNT(*) FROM teacher_supplement_requests WHERE status = 'pending')
+				+
+				(SELECT COUNT(*) FROM course_supplement_requests WHERE status = 'pending')
+			) AS pending_supplement_requests_count,
 			(SELECT COUNT(*) FROM resources WHERE status = 'deleted') AS deleted_resources_count,
 			(SELECT COUNT(*) FROM courses WHERE status = 'deleted') AS deleted_courses_count,
 			(SELECT COUNT(*) FROM teachers WHERE status = 'deleted') AS deleted_teachers_count
