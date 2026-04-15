@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type MiscHandler struct {
@@ -128,6 +129,25 @@ func (h *MiscHandler) GetMyPoints(c *gin.Context) {
 func (h *MiscHandler) GetMyContributions(c *gin.Context) {
 	userID := c.MustGet(constant.GinUserID).(int64)
 	item, err := h.miscSvc.GetMyContributionSummary(userID)
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	resp.Success(c, item)
+}
+
+func (h *MiscHandler) GetUserContributionProfile(c *gin.Context) {
+	userID, err := parseStringID(c.Param("id"))
+	if err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+
+	item, err := h.miscSvc.GetUserContributionProfile(userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "用户不存在")
+		return
+	}
 	if err != nil {
 		failInternalWithLog(c, err)
 		return

@@ -49,6 +49,10 @@ func (m *miscRepositoryStub) ListMyContributionEvents(userID int64, start, end t
 	return m.events, nil
 }
 
+func (m *miscRepositoryStub) GetUserContributionProfile(userID int64) (*repo.UserContributionProfile, error) {
+	return &repo.UserContributionProfile{UserID: userID, Contribution: 0, Level: 1}, nil
+}
+
 func (m *miscRepositoryStub) ListAnnouncements() ([]repo.AnnouncementItem, error) {
 	return nil, nil
 }
