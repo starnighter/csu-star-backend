@@ -106,17 +106,11 @@ func (s *Scheduler) runRefresh() {
 		{period: "week", since: &weekAgo},
 		{period: "month", since: &monthAgo},
 	} {
-		if err := s.aggregateRepo.RefreshTeacherRankings(item.period, item.since); err != nil {
-			logger.Log.Error("刷新教师排行榜失败", zap.String("period", item.period), zap.Error(err))
-		}
 		if err := s.aggregateRepo.RefreshCourseRankings(item.period, item.since); err != nil {
 			logger.Log.Error("刷新课程排行榜失败", zap.String("period", item.period), zap.Error(err))
 		}
 	}
 
-	if err := s.syncTeacherRankingRedis(); err != nil {
-		logger.Log.Error("同步教师排行榜缓存失败", zap.Error(err))
-	}
 	if err := s.syncCourseRankingRedis(); err != nil {
 		logger.Log.Error("同步课程排行榜缓存失败", zap.Error(err))
 	}
