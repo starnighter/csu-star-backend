@@ -158,7 +158,7 @@ type MiscRepository interface {
 	CreateFeedback(feedback *model.Feedbacks) error
 	CreateReport(report *model.Reports) error
 	CreateCorrection(correction *model.Corrections) error
-	Search(q, searchType string, page, size int) ([]SearchResultItem, int64, error)
+	Search(q, searchType string, page, size int, relevanceFirst bool) ([]SearchResultItem, int64, error)
 	ListNotifications(userID int64, isRead *bool, page, size int) ([]NotificationItem, int64, error)
 	ListHomeNotificationSummary(userID int64) (*HomeNotificationSummary, error)
 	CountUnreadNotifications(userID int64) (int64, error)
@@ -511,7 +511,7 @@ func (r *miscRepository) CreateCorrection(correction *model.Corrections) error {
 	return r.db.Create(correction).Error
 }
 
-func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchResultItem, int64, error) {
+func (r *miscRepository) Search(q, searchType string, page, size int, relevanceFirst bool) ([]SearchResultItem, int64, error) {
 	var items []SearchResultItem
 	var total int64
 	like := "%" + q + "%"
@@ -691,7 +691,9 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 					'课程资源合集' AS subtitle,
 					'' AS detail_path,
 					'' AS resource_collection_path,
-					courses.created_at
+					courses.created_at,
+					COALESCE(courses.resource_count, 0) AS metric_primary,
+					COALESCE(courses.download_total, 0) AS metric_secondary
 				FROM courses
 				WHERE courses.status = 'active' AND courses.name ILIKE ?
 				UNION ALL
@@ -703,7 +705,9 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 					'' AS subtitle,
 					'' AS detail_path,
 					'' AS resource_collection_path,
-					created_at
+					created_at,
+					COALESCE(eval_count, 0) AS metric_primary,
+					0 AS metric_secondary
 				FROM courses WHERE status = 'active' AND name ILIKE ?
 				UNION ALL
 				SELECT
@@ -714,11 +718,87 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 					'' AS subtitle,
 					'' AS detail_path,
 					'' AS resource_collection_path,
-					created_at
+					created_at,
+					COALESCE(eval_count, 0) AS metric_primary,
+					0 AS metric_secondary
 				FROM teachers WHERE status = 'active' AND name ILIKE ?
 			) AS search_results
-			ORDER BY created_at DESC
+			ORDER BY metric_primary DESC, metric_secondary DESC, created_at DESC
 			LIMIT ? OFFSET ?`
+		var sqlArgs []interface{}
+		if relevanceFirst {
+			prefixLike := trimmedQ + "%"
+			sql = `
+				SELECT * FROM (
+					SELECT
+						'resource' AS type,
+						courses.id AS id,
+						courses.name AS title,
+						'' AS name,
+						'课程资源合集' AS subtitle,
+						'' AS detail_path,
+						'' AS resource_collection_path,
+						courses.created_at,
+						COALESCE(courses.resource_count, 0) AS metric_primary,
+						COALESCE(courses.download_total, 0) AS metric_secondary,
+						CASE
+							WHEN LOWER(courses.name) = LOWER(?) THEN 1000
+							WHEN courses.name ILIKE ? THEN 700
+							WHEN courses.name ILIKE ? THEN 400
+							ELSE COALESCE(similarity(courses.name, ?), 0) * 100
+						END AS relevance_score
+					FROM courses
+					WHERE courses.status = 'active' AND courses.name ILIKE ?
+					UNION ALL
+					SELECT
+						'course' AS type,
+						id,
+						'' AS title,
+						name,
+						'' AS subtitle,
+						'' AS detail_path,
+						'' AS resource_collection_path,
+						created_at,
+						COALESCE(eval_count, 0) AS metric_primary,
+						0 AS metric_secondary,
+						CASE
+							WHEN LOWER(name) = LOWER(?) THEN 1000
+							WHEN name ILIKE ? THEN 700
+							WHEN name ILIKE ? THEN 400
+							ELSE COALESCE(similarity(name, ?), 0) * 100
+						END AS relevance_score
+					FROM courses WHERE status = 'active' AND name ILIKE ?
+					UNION ALL
+					SELECT
+						'teacher' AS type,
+						id,
+						'' AS title,
+						name,
+						'' AS subtitle,
+						'' AS detail_path,
+						'' AS resource_collection_path,
+						created_at,
+						COALESCE(eval_count, 0) AS metric_primary,
+						0 AS metric_secondary,
+						CASE
+							WHEN LOWER(name) = LOWER(?) THEN 1000
+							WHEN name ILIKE ? THEN 700
+							WHEN name ILIKE ? THEN 400
+							ELSE COALESCE(similarity(name, ?), 0) * 100
+						END AS relevance_score
+					FROM teachers WHERE status = 'active' AND name ILIKE ?
+				) AS search_results
+				ORDER BY relevance_score DESC, metric_primary DESC, metric_secondary DESC, created_at DESC
+				LIMIT ? OFFSET ?`
+			sqlArgs = []interface{}{
+				trimmedQ, prefixLike, like, trimmedQ, like,
+				trimmedQ, prefixLike, like, trimmedQ, like,
+				trimmedQ, prefixLike, like, trimmedQ, like,
+				size, offset,
+			}
+		} else {
+			sqlArgs = []interface{}{like, like, like, size, offset}
+		}
 		countSQL := `
 			SELECT COUNT(*) FROM (
 				SELECT courses.id
@@ -732,7 +812,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 		if err := r.db.Raw(countSQL, like, like, like).Scan(&total).Error; err != nil {
 			return nil, 0, err
 		}
-		err := r.db.Raw(sql, like, like, like, size, offset).Scan(&items).Error
+		err := r.db.Raw(sql, sqlArgs...).Scan(&items).Error
 		for i := range items {
 			switch items[i].Type {
 			case "resource":
@@ -774,14 +854,34 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 			return nil, 0, err
 		}
 
-		err := base.Select(`
+		query := base.Select(`
           'resource' AS type,
           courses.id AS id,
           courses.name AS title,
           '' AS name,
           '课程资源合集' AS subtitle,
           '' AS detail_path,
-          '' AS resource_collection_path`).
+          '' AS resource_collection_path`)
+		if relevanceFirst {
+			prefixLike := trimmedQ + "%"
+			query = query.Select(`
+          'resource' AS type,
+          courses.id AS id,
+          courses.name AS title,
+          '' AS name,
+          '课程资源合集' AS subtitle,
+          '' AS detail_path,
+          '' AS resource_collection_path,
+          CASE
+            WHEN LOWER(courses.name) = LOWER(?) THEN 1000
+            WHEN courses.name ILIKE ? THEN 700
+            WHEN courses.name ILIKE ? THEN 400
+            ELSE COALESCE(similarity(courses.name, ?), 0) * 100
+          END AS relevance_score
+        `, trimmedQ, prefixLike, like, trimmedQ).
+				Order("relevance_score DESC")
+		}
+		err := query.
 			Order("COALESCE(courses.resource_count, 0) DESC").
 			Order("COALESCE(courses.download_total, 0) DESC").
 			Order("courses.created_at DESC").
@@ -810,8 +910,32 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 		if err := base.Count(&total).Error; err != nil {
 			return nil, 0, err
 		}
-		err := base.Select(`'course' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`).
-			Order("COALESCE(eval_count, 0) DESC").Order("created_at DESC").Offset(offset).Limit(size).Scan(&items).Error
+		query := base.Select(`'course' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`)
+		if relevanceFirst {
+			prefixLike := trimmedQ + "%"
+			query = query.Select(`
+        'course' AS type,
+        id,
+        '' AS title,
+        name,
+        '' AS subtitle,
+        '' AS detail_path,
+        '' AS resource_collection_path,
+        CASE
+          WHEN LOWER(name) = LOWER(?) THEN 1000
+          WHEN name ILIKE ? THEN 700
+          WHEN name ILIKE ? THEN 400
+          ELSE COALESCE(similarity(name, ?), 0) * 100
+        END AS relevance_score
+      `, trimmedQ, prefixLike, like, trimmedQ).
+				Order("relevance_score DESC")
+		}
+		err := query.
+			Order("COALESCE(eval_count, 0) DESC").
+			Order("created_at DESC").
+			Offset(offset).
+			Limit(size).
+			Scan(&items).Error
 		for i := range items {
 			items[i].DetailPath = CourseDetailPath(items[i].ID)
 		}
@@ -826,8 +950,32 @@ func (r *miscRepository) Search(q, searchType string, page, size int) ([]SearchR
 		if err := base.Count(&total).Error; err != nil {
 			return nil, 0, err
 		}
-		err := base.Select(`'teacher' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`).
-			Order("COALESCE(eval_count, 0) DESC").Order("created_at DESC").Offset(offset).Limit(size).Scan(&items).Error
+		query := base.Select(`'teacher' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`)
+		if relevanceFirst {
+			prefixLike := trimmedQ + "%"
+			query = query.Select(`
+        'teacher' AS type,
+        id,
+        '' AS title,
+        name,
+        '' AS subtitle,
+        '' AS detail_path,
+        '' AS resource_collection_path,
+        CASE
+          WHEN LOWER(name) = LOWER(?) THEN 1000
+          WHEN name ILIKE ? THEN 700
+          WHEN name ILIKE ? THEN 400
+          ELSE COALESCE(similarity(name, ?), 0) * 100
+        END AS relevance_score
+      `, trimmedQ, prefixLike, like, trimmedQ).
+				Order("relevance_score DESC")
+		}
+		err := query.
+			Order("COALESCE(eval_count, 0) DESC").
+			Order("created_at DESC").
+			Offset(offset).
+			Limit(size).
+			Scan(&items).Error
 		for i := range items {
 			items[i].DetailPath = TeacherDetailPath(items[i].ID)
 		}

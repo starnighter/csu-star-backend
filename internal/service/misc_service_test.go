@@ -72,7 +72,7 @@ func (m *miscRepositoryStub) CreateCorrection(correction *model.Corrections) err
 	return nil
 }
 
-func (m *miscRepositoryStub) Search(q, searchType string, page, size int) ([]repo.SearchResultItem, int64, error) {
+func (m *miscRepositoryStub) Search(q, searchType string, page, size int, relevanceFirst bool) ([]repo.SearchResultItem, int64, error) {
 	return nil, 0, nil
 }
 

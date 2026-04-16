@@ -227,12 +227,12 @@ func (s *MiscService) CreateCorrection(userID int64, targetType string, targetID
 	})
 }
 
-func (s *MiscService) Search(userID int64, q, searchType string, page, size int) ([]repo.SearchResultItem, int64, error) {
+func (s *MiscService) Search(userID int64, q, searchType string, page, size int, relevanceFirst bool) ([]repo.SearchResultItem, int64, error) {
 	fillPagination(&page, &size)
 	if searchType == "" {
 		searchType = "all"
 	}
-	items, total, err := s.miscRepo.Search(q, searchType, page, size)
+	items, total, err := s.miscRepo.Search(q, searchType, page, size, relevanceFirst)
 	if err != nil {
 		return nil, 0, err
 	}
