@@ -216,6 +216,9 @@ func (h *TeacherHandler) CreateTeacherEvaluation(c *gin.Context) {
 	case errors.Is(err, service.ErrTeacherEvaluationConflict):
 		resp.FailWithCode(c, http.StatusConflict, resp.CodeFail, "同类型教师评价已存在")
 		return
+	case errors.Is(err, service.ErrTeacherEvaluationDisabled):
+		resp.FailWithCode(c, http.StatusForbidden, resp.CodeFail, "教师评价功能已关闭")
+		return
 	case err != nil:
 		failInternalWithLog(c, err)
 		return

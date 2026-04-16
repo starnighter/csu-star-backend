@@ -253,7 +253,7 @@ func (h *MiscHandler) Search(c *gin.Context) {
 	if v, ok := c.Get(constant.GinUserID); ok {
 		userID = v.(int64)
 	}
-	items, total, err := h.miscSvc.Search(userID, r.Q, r.Type, r.Page, r.Size)
+	items, total, err := h.miscSvc.Search(userID, r.Q, r.Type, r.Page, r.Size, r.RelevanceFirst)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return

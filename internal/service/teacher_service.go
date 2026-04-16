@@ -22,10 +22,13 @@ var (
 	ErrTeacherEvaluationNotFound       = errors.New("teacher evaluation not found")
 	ErrTeacherEvaluationConflict       = errors.New("teacher evaluation conflict")
 	ErrTeacherEvaluationForbidden      = errors.New("teacher evaluation forbidden")
+	ErrTeacherEvaluationDisabled       = errors.New("teacher evaluation disabled")
 	ErrTeacherEvaluationReplyNotFound  = errors.New("teacher evaluation reply not found")
 	ErrTeacherEvaluationReplyForbidden = errors.New("teacher evaluation reply forbidden")
 	ErrEvaluationAssociationIncomplete = errors.New("evaluation association incomplete")
 )
+
+const teacherEvaluationEnabled = false
 
 type TeacherService struct {
 	db          *gorm.DB
@@ -144,6 +147,9 @@ func (s *TeacherService) ListTeacherEvaluations(query repo.TeacherEvaluationQuer
 }
 
 func (s *TeacherService) CreateTeacherEvaluation(userID, teacherID int64, input model.TeacherEvaluations) (*model.TeacherEvaluations, error) {
+	if !teacherEvaluationEnabled {
+		return nil, ErrTeacherEvaluationDisabled
+	}
 	if err := s.validateTeacherEvaluationRefs(teacherID, input.CourseID); err != nil {
 		return nil, err
 	}

@@ -46,10 +46,11 @@ type CorrectionCreateReq struct {
 }
 
 type SearchReq struct {
-	Q    string `form:"q" binding:"omitempty,max=50"`
-	Type string `form:"type" binding:"omitempty,oneof=all resource course teacher"`
-	Page int    `form:"page" binding:"omitempty,min=1"`
-	Size int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Q              string `form:"q" binding:"omitempty,max=50"`
+	Type           string `form:"type" binding:"omitempty,oneof=all resource course teacher"`
+	Page           int    `form:"page" binding:"omitempty,min=1"`
+	Size           int    `form:"size" binding:"omitempty,min=1,max=100"`
+	RelevanceFirst bool   `form:"relevance_first"`
 }
 
 type SupplementRequestCreateReq struct {
