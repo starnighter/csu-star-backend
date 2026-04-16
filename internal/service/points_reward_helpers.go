@@ -2,6 +2,7 @@ package service
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/repo"
 
 	"gorm.io/gorm"
 )
@@ -16,6 +17,7 @@ func rewardUserPointsTx(
 	userID int64,
 	relatedID int64,
 	delta int,
+	contributionDelta int,
 	pointsType model.PointsType,
 	reason string,
 	title string,
@@ -41,6 +43,10 @@ func rewardUserPointsTx(
 		Reason:    reason,
 		RelatedID: relatedID,
 	}).Error; err != nil {
+		return err
+	}
+
+	if err := repo.ApplyUserContributionDeltaTx(tx, userID, contributionDelta); err != nil {
 		return err
 	}
 

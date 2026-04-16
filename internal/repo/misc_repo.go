@@ -103,6 +103,12 @@ type ContributionSummary struct {
 	MaxDayScore   int                  `json:"max_day_score"`
 }
 
+type UserContributionProfile struct {
+	UserID       int64 `json:"user_id,string"`
+	Contribution int   `json:"contribution"`
+	Level        int   `json:"level"`
+}
+
 type AnnouncementItem struct {
 	ID          int64     `json:"id,string"`
 	Title       string    `json:"title"`
@@ -153,6 +159,7 @@ type MiscRepository interface {
 	ListMyFavorites(userID int64, targetType string, page, size int) ([]FavoriteItem, int64, error)
 	ListMyPoints(userID int64, page, size int) ([]PointRecordItem, int64, error)
 	ListMyContributionEvents(userID int64, start, end time.Time) ([]ContributionEvent, error)
+	GetUserContributionProfile(userID int64) (*UserContributionProfile, error)
 	ListAnnouncements() ([]AnnouncementItem, error)
 	GetShowcaseStats() (*ShowcaseStats, error)
 	CreateFeedback(feedback *model.Feedbacks) error
@@ -329,6 +336,10 @@ func (r *miscRepository) DailyCheckin(userID int64) (int, error) {
 			return err
 		}
 
+		if err := ApplyUserContributionDeltaTx(tx, userID, 1); err != nil {
+			return err
+		}
+
 		return tx.Create(&model.Notifications{
 			UserID:    userID,
 			Type:      model.NotificationPointsChanged,
@@ -468,6 +479,26 @@ func (r *miscRepository) ListMyContributionEvents(userID int64, start, end time.
 		userID, model.PointsTypeInvite, start, end,
 	).Scan(&items).Error
 	return items, err
+}
+
+func (r *miscRepository) GetUserContributionProfile(userID int64) (*UserContributionProfile, error) {
+	var item UserContributionProfile
+	err := r.db.Table("users AS u").
+		Select(`
+			u.id AS user_id,
+			COALESCE(uc.contribution, 0) AS contribution,
+			COALESCE(uc.level, 1) AS level
+		`).
+		Joins("LEFT JOIN user_contributions AS uc ON uc.user_id = u.id").
+		Where("u.id = ?", userID).
+		Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.UserID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
 }
 
 func (r *miscRepository) ListAnnouncements() ([]AnnouncementItem, error) {

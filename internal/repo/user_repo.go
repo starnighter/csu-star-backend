@@ -77,6 +77,10 @@ func (r *userRepository) RewardInviter(inviterID int64) error {
 			return err
 		}
 
+		if err := ApplyUserContributionDeltaTx(tx, inviterID, 3); err != nil {
+			return err
+		}
+
 		return tx.Create(&model.Notifications{
 			UserID:    inviterID,
 			Type:      model.NotificationPointsChanged,
@@ -114,6 +118,10 @@ func (r *userRepository) RewardInvitee(inviteeID int64) error {
 			Reason:    "填写邀请码注册奖励积分",
 			RelatedID: 0,
 		}).Error; err != nil {
+			return err
+		}
+
+		if err := ApplyUserContributionDeltaTx(tx, inviteeID, 3); err != nil {
 			return err
 		}
 

@@ -171,6 +171,10 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 	}, nil
 }
 
+func (s *MiscService) GetUserContributionProfile(userID int64) (*repo.UserContributionProfile, error) {
+	return s.miscRepo.GetUserContributionProfile(userID)
+}
+
 func (s *MiscService) ListAnnouncements() ([]repo.AnnouncementItem, error) {
 	return s.miscRepo.ListAnnouncements()
 }

@@ -325,6 +325,7 @@ func (s *ResourceService) FinalizeResourceUpload(userID int64, sessionID string)
 			userID,
 			resource.ID,
 			resourceUploadRewardPoints,
+			resourceUploadRewardPoints,
 			model.PointsTypeUpload,
 			"上传资源获得积分",
 			"上传成功",

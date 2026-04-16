@@ -95,6 +95,9 @@ func main() {
 	if err := ensureAuditLogActions(db); err != nil {
 		logger.Log.Error("补齐审计动作枚举失败：", zap.Error(err))
 	}
+	if err := ensureUserContributionInfrastructure(db); err != nil {
+		logger.Log.Error("补齐用户贡献值基础设施失败：", zap.Error(err))
+	}
 
 	// 初始化OAuth Client
 	oauthClient := utils.NewHttpClient(10*time.Second, 100)
@@ -632,5 +635,79 @@ func ensureNotificationInfrastructure(db *gorm.DB) error {
 			ON notifications (category, created_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_global_notification_reads_user_id
 			ON global_notification_reads (user_id, created_at DESC);
+	`).Error
+}
+
+func ensureUserContributionInfrastructure(db *gorm.DB) error {
+	return db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_contributions (
+			user_id BIGINT PRIMARY KEY,
+			contribution INTEGER NOT NULL DEFAULT 0,
+			level INTEGER NOT NULL DEFAULT 1,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CONSTRAINT chk_user_contributions_contribution_non_negative CHECK (contribution >= 0),
+			CONSTRAINT chk_user_contributions_level_range CHECK (level >= 1 AND level <= 100)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_user_contributions_level
+			ON user_contributions (level);
+
+		INSERT INTO user_contributions (user_id, contribution, level)
+		SELECT
+			u.id,
+			COALESCE(src.contribution, 0) AS contribution,
+			1 AS level
+		FROM users u
+		LEFT JOIN (
+			SELECT
+				x.user_id,
+				SUM(x.score)::integer AS contribution
+			FROM (
+				SELECT uploader_id AS user_id, 2 AS score FROM resources
+				UNION ALL
+				SELECT user_id, 1 AS score FROM teacher_evaluations
+				UNION ALL
+				SELECT user_id, 1 AS score FROM course_evaluations
+				UNION ALL
+				SELECT user_id, 1 AS score FROM points_records WHERE type = 'checkin'
+				UNION ALL
+				SELECT user_id, 3 AS score FROM points_records WHERE type = 'invite'
+			) x
+			GROUP BY x.user_id
+		) src ON src.user_id = u.id
+		ON CONFLICT (user_id) DO NOTHING;
+
+		DO $$
+		DECLARE
+			row_record RECORD;
+			remaining INTEGER;
+			next_level INTEGER;
+			cost INTEGER;
+			computed_level INTEGER;
+		BEGIN
+			FOR row_record IN SELECT user_id, contribution FROM user_contributions LOOP
+				remaining := GREATEST(row_record.contribution, 0);
+				computed_level := 1;
+				FOR next_level IN 2..100 LOOP
+					IF next_level <= 10 THEN
+						cost := 5;
+					ELSIF next_level <= 20 THEN
+						cost := 10;
+					ELSE
+						cost := 20 + ((next_level - 21) / 10) * 10;
+					END IF;
+					EXIT WHEN remaining < cost;
+					remaining := remaining - cost;
+					computed_level := next_level;
+				END LOOP;
+
+				UPDATE user_contributions
+				SET level = computed_level,
+					updated_at = NOW()
+				WHERE user_id = row_record.user_id;
+			END LOOP;
+		END
+		$$;
 	`).Error
 }

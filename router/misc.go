@@ -12,6 +12,7 @@ func SetUpMiscRouter(r *gin.Engine, miscHandler *handler.MiscHandler) {
 	r.GET("/announcements", miscHandler.GetAnnouncements)
 	r.GET("/search", middlewarepackage.OptionalJWTAuth(), miscHandler.Search)
 	r.GET("/showcase/stats", miscHandler.GetShowcaseStats)
+	r.GET("/users/:id/contribution", miscHandler.GetUserContributionProfile)
 
 	authGroup := r.Group("")
 	authGroup.Use(middlewarepackage.JWTAuth())
