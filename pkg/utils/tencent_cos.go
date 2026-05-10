@@ -20,6 +20,8 @@ var (
 	cosClient *cos.Client
 )
 
+const TencentCosDownloadURLTTL = 5 * time.Minute
+
 type FileInfo struct {
 	Filename string `json:"filename"`
 	FileKey  string `json:"file_key"`
@@ -113,7 +115,7 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 		cosKey,
 		config.GlobalConfig.Tencent.SecretID,
 		config.GlobalConfig.Tencent.SecretKey,
-		2*time.Hour,
+		TencentCosDownloadURLTTL,
 		opt,
 	)
 	if err != nil {
