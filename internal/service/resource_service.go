@@ -409,7 +409,7 @@ func (s *ResourceService) DownloadResource(userID, resourceID, fileID int64, ip 
 		return nil, err
 	}
 	result.DownloadURL = url
-	result.ExpiresIn = 7200
+	result.ExpiresIn = int(utils.TencentCosDownloadURLTTL.Seconds())
 	return result, nil
 }
 
