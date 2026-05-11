@@ -116,7 +116,7 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 	}
 	cosClient = cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{})
 
-	got, err := TencentCosDownloadTemporarily("resources/a.pdf", "a.pdf")
+	got, err := TencentCosDownloadTemporarily("resources/a.pdf", "实验报告 final.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +134,15 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 	if parsed.Query().Get("q-ak") != "" || parsed.Query().Get("q-signature") != "" {
 		t.Fatalf("expected CDN URL not to include COS signature params, got %q", got)
 	}
-	if parsed.Query().Get("response-content-disposition") != "" {
-		t.Fatalf("expected CDN URL not to include response-content-disposition, got %q", got)
+	disposition := parsed.Query().Get("response-content-disposition")
+	if disposition == "" {
+		t.Fatalf("expected CDN URL to include response-content-disposition, got %q", got)
+	}
+	if !strings.Contains(disposition, `final.pdf"`) {
+		t.Fatalf("expected CDN URL filename fallback to preserve extension and ASCII suffix, got %q", disposition)
+	}
+	if !strings.Contains(disposition, "filename*=UTF-8''%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A%20final.pdf") {
+		t.Fatalf("expected CDN URL UTF-8 filename*, got %q", disposition)
 	}
 }
 
