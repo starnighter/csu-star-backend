@@ -75,10 +75,14 @@ type TencentConfig struct {
 }
 
 type CosConfig struct {
-	AppID     string `mapstructure:"app_id"`
-	Bucket    string `mapstructure:"bucket"`
-	Region    string `mapstructure:"region"`
-	CDNDomain string `mapstructure:"cdn_domain"`
+	AppID             string `mapstructure:"app_id"`
+	Bucket            string `mapstructure:"bucket"`
+	Region            string `mapstructure:"region"`
+	CDNDomain         string `mapstructure:"cdn_domain"`
+	CDNAuthEnabled    bool   `mapstructure:"cdn_auth_enabled"`
+	CDNAuthType       string `mapstructure:"cdn_auth_type"`
+	CDNAuthKey        string `mapstructure:"cdn_auth_key"`
+	CDNAuthTTLSeconds int    `mapstructure:"cdn_auth_ttl_seconds"`
 }
 
 type MailConfig struct {
