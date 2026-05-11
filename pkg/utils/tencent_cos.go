@@ -215,14 +215,45 @@ func randomCDNAuthNonce() (string, error) {
 }
 
 func buildDownloadContentDisposition(downloadName string) string {
+	filename := sanitizeDownloadFilename(downloadName)
+	if filename == "" {
+		return ""
+	}
+
+	encoded := encodeRFC5987Value(filename)
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, escapeQuotedFilename(filename), encoded)
+}
+
+func sanitizeDownloadFilename(downloadName string) string {
 	downloadName = strings.TrimSpace(downloadName)
 	if downloadName == "" {
 		return ""
 	}
 
-	fallback := buildASCIIFallbackFilename(downloadName)
-	encoded := encodeRFC5987Value(downloadName)
-	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, fallback, encoded)
+	var builder strings.Builder
+	for _, r := range downloadName {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			builder.WriteByte('_')
+		case r == '/' || r == '\\':
+			builder.WriteByte('_')
+		default:
+			builder.WriteRune(r)
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func escapeQuotedFilename(filename string) string {
+	var builder strings.Builder
+	for _, r := range filename {
+		if r == '"' || r == '\\' {
+			builder.WriteByte('\\')
+		}
+		builder.WriteRune(r)
+	}
+	return builder.String()
 }
 
 func buildASCIIFallbackFilename(downloadName string) string {
