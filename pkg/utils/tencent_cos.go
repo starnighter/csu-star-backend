@@ -132,43 +132,6 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 	return presignedURL.String(), nil
 }
 
-func TencentCosSetDownloadName(cosKey, downloadName string) error {
-	if cosClient == nil || cosKey == "" {
-		return nil
-	}
-
-	disposition := buildDownloadContentDisposition(downloadName)
-	if disposition == "" {
-		return nil
-	}
-
-	resp, err := cosClient.Object.Head(context.Background(), cosKey, nil)
-	if err != nil {
-		return err
-	}
-
-	sourceURL := fmt.Sprintf(
-		"%s-%s.cos.%s.myqcloud.com/%s",
-		config.GlobalConfig.Tencent.Cos.Bucket,
-		config.GlobalConfig.Tencent.Cos.AppID,
-		config.GlobalConfig.Tencent.Cos.Region,
-		cosKey,
-	)
-	opt := &cos.ObjectCopyOptions{
-		ObjectCopyHeaderOptions: &cos.ObjectCopyHeaderOptions{
-			ContentDisposition:    disposition,
-			ContentType:           resp.Header.Get("Content-Type"),
-			CacheControl:          resp.Header.Get("Cache-Control"),
-			ContentEncoding:       resp.Header.Get("Content-Encoding"),
-			ContentLanguage:       resp.Header.Get("Content-Language"),
-			Expires:               resp.Header.Get("Expires"),
-			XCosMetadataDirective: "Replaced",
-		},
-	}
-	_, _, err = cosClient.Object.Copy(context.Background(), cosKey, sourceURL, opt)
-	return err
-}
-
 func shouldUseCDNAuth() bool {
 	if config.GlobalConfig == nil {
 		return false
