@@ -105,13 +105,9 @@ func TencentCosUploadByStream(stream io.Reader, cosKeyPrefix, fileExtension stri
 }
 
 func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string, err error) {
+	query := buildDownloadResponseQuery(downloadName)
 	if shouldUseCDNAuth() {
-		return buildTencentCDNDownloadURL(cosKey, nil, time.Now())
-	}
-
-	query := url.Values{}
-	if disposition := buildDownloadContentDisposition(downloadName); disposition != "" {
-		query.Set("response-content-disposition", disposition)
+		return buildTencentCDNDownloadURL(cosKey, query, time.Now())
 	}
 
 	var opt *cos.PresignedURLOptions
@@ -215,6 +211,14 @@ func buildTencentCDNDownloadURL(cosKey string, query url.Values, now time.Time) 
 	query.Set("sign", fmt.Sprintf("%d-%s-0-%s", signTimestamp, nonce, hex.EncodeToString(hash[:])))
 	baseURL.RawQuery = query.Encode()
 	return baseURL.String(), nil
+}
+
+func buildDownloadResponseQuery(downloadName string) url.Values {
+	query := url.Values{}
+	if disposition := buildDownloadContentDisposition(downloadName); disposition != "" {
+		query.Set("response-content-disposition", disposition)
+	}
+	return query
 }
 
 func normalizeCDNBaseURL(cdnDomain string) (*url.URL, error) {
