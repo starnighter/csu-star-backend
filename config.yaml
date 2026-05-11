@@ -45,6 +45,7 @@ tencent:
     app_id: "your_app_id"
     bucket: "your_bucket"
     region: "your_cos_region"
+    cdn_domain: "file.csustar.wiki"
 
 mail:
   verification:
