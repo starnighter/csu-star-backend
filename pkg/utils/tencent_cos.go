@@ -122,7 +122,34 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 		return "", err
 	}
 
-	return presignedURL.String(), nil
+	return applyCosCDNDomain(presignedURL.String()), nil
+}
+
+func applyCosCDNDomain(rawURL string) string {
+	if config.GlobalConfig == nil {
+		return rawURL
+	}
+
+	cdnDomain := strings.TrimSpace(config.GlobalConfig.Tencent.Cos.CDNDomain)
+	if cdnDomain == "" {
+		return rawURL
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	cdnURL, err := url.Parse(cdnDomain)
+	if err == nil && cdnURL.Host != "" {
+		parsed.Scheme = cdnURL.Scheme
+		parsed.Host = cdnURL.Host
+		return parsed.String()
+	}
+
+	parsed.Scheme = "https"
+	parsed.Host = strings.TrimRight(cdnDomain, "/")
+	return parsed.String()
 }
 
 func buildDownloadContentDisposition(downloadName string) string {

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"csu-star-backend/config"
 	"strings"
 	"testing"
 )
@@ -27,5 +28,27 @@ func TestBuildASCIIFallbackFilename(t *testing.T) {
 	}
 	if got := buildASCIIFallbackFilename("   "); got != "download" {
 		t.Fatalf("expected empty filename fallback, got %q", got)
+	}
+}
+
+func TestApplyCosCDNDomain(t *testing.T) {
+	previousConfig := config.GlobalConfig
+	t.Cleanup(func() {
+		config.GlobalConfig = previousConfig
+	})
+
+	config.GlobalConfig = &config.Config{
+		Tencent: config.TencentConfig{
+			Cos: config.CosConfig{
+				CDNDomain: "file.csustar.wiki",
+			},
+		},
+	}
+
+	rawURL := "https://bucket-123.cos.ap-guangzhou.myqcloud.com/resources/a.pdf?q-sign-algorithm=sha1&response-content-disposition=attachment"
+	got := applyCosCDNDomain(rawURL)
+	want := "https://file.csustar.wiki/resources/a.pdf?q-sign-algorithm=sha1&response-content-disposition=attachment"
+	if got != want {
+		t.Fatalf("expected CDN URL %q, got %q", want, got)
 	}
 }
