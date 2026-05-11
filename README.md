@@ -135,6 +135,11 @@ tencent:
   cos:
     bucket: "your_bucket"
     region: "your_region"
+    cdn_domain: "file.csustar.wiki"
+    cdn_auth_enabled: true
+    cdn_auth_type: "A"
+    cdn_auth_key: "your_cdn_auth_key"
+    cdn_auth_ttl_seconds: 300
 
 mail:
   verification:

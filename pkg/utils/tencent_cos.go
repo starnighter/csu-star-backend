@@ -2,7 +2,10 @@ package utils
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/rand"
 	"csu-star-backend/config"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -102,10 +105,16 @@ func TencentCosUploadByStream(stream io.Reader, cosKeyPrefix, fileExtension stri
 }
 
 func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string, err error) {
-	var opt *cos.PresignedURLOptions
+	query := url.Values{}
 	if disposition := buildDownloadContentDisposition(downloadName); disposition != "" {
-		query := url.Values{}
 		query.Set("response-content-disposition", disposition)
+	}
+	if shouldUseCDNAuth() {
+		return buildTencentCDNDownloadURL(cosKey, query, time.Now())
+	}
+
+	var opt *cos.PresignedURLOptions
+	if len(query) > 0 {
 		opt = &cos.PresignedURLOptions{Query: &query}
 	}
 
@@ -123,34 +132,77 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 		return "", err
 	}
 
-	return applyCosCDNDomain(presignedURL.String()), nil
+	return presignedURL.String(), nil
 }
 
-func applyCosCDNDomain(rawURL string) string {
+func shouldUseCDNAuth() bool {
 	if config.GlobalConfig == nil {
-		return rawURL
+		return false
 	}
 
-	cdnDomain := strings.TrimSpace(config.GlobalConfig.Tencent.Cos.CDNDomain)
-	if cdnDomain == "" {
-		return rawURL
-	}
+	cosConfig := config.GlobalConfig.Tencent.Cos
+	return cosConfig.CDNAuthEnabled &&
+		strings.EqualFold(strings.TrimSpace(cosConfig.CDNAuthType), "A") &&
+		strings.TrimSpace(cosConfig.CDNDomain) != "" &&
+		strings.TrimSpace(cosConfig.CDNAuthKey) != ""
+}
 
-	parsed, err := url.Parse(rawURL)
+func buildTencentCDNDownloadURL(cosKey string, query url.Values, now time.Time) (string, error) {
+	cosConfig := config.GlobalConfig.Tencent.Cos
+	baseURL, err := normalizeCDNBaseURL(cosConfig.CDNDomain)
 	if err != nil {
-		return rawURL
+		return "", err
 	}
 
-	cdnURL, err := url.Parse(cdnDomain)
-	if err == nil && cdnURL.Host != "" {
-		parsed.Scheme = cdnURL.Scheme
-		parsed.Host = cdnURL.Host
-		return parsed.String()
+	objectPath := "/" + strings.TrimLeft(cosKey, "/")
+	baseURL.Path = objectPath
+	baseURL.RawQuery = query.Encode()
+
+	authTTL := time.Duration(cosConfig.CDNAuthTTLSeconds) * time.Second
+	if authTTL <= 0 {
+		authTTL = TencentCosDownloadURLTTL
+	}
+	signTimestamp := now.Add(authTTL).Unix()
+	nonce, err := randomCDNAuthNonce()
+	if err != nil {
+		return "", err
 	}
 
-	parsed.Scheme = "https"
-	parsed.Host = strings.TrimRight(cdnDomain, "/")
-	return parsed.String()
+	signedPath := baseURL.EscapedPath()
+	hash := md5.Sum([]byte(fmt.Sprintf("%s-%d-%s-0-%s", signedPath, signTimestamp, nonce, cosConfig.CDNAuthKey)))
+	query.Set("sign", fmt.Sprintf("%d-%s-0-%s", signTimestamp, nonce, hex.EncodeToString(hash[:])))
+	baseURL.RawQuery = query.Encode()
+	return baseURL.String(), nil
+}
+
+func normalizeCDNBaseURL(cdnDomain string) (*url.URL, error) {
+	cdnDomain = strings.TrimSpace(cdnDomain)
+	if cdnDomain == "" {
+		return nil, fmt.Errorf("cdn domain is empty")
+	}
+	if !strings.Contains(cdnDomain, "://") {
+		cdnDomain = "https://" + cdnDomain
+	}
+
+	parsed, err := url.Parse(cdnDomain)
+	if err != nil {
+		return nil, err
+	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("cdn domain host is empty")
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed, nil
+}
+
+func randomCDNAuthNonce() (string, error) {
+	var bytes [4]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes[:]), nil
 }
 
 func buildDownloadContentDisposition(downloadName string) string {
