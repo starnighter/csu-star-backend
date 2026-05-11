@@ -340,16 +340,6 @@ func (s *ResourceService) FinalizeResourceUpload(userID int64, sessionID string)
 		logger.Log.Warn("删除资源上传会话失败", zap.String("session_id", session.ID), zap.Error(err))
 	}
 
-	for _, file := range session.Files {
-		if err := utils.TencentCosSetDownloadName(file.FileKey, file.Filename); err != nil {
-			logger.Log.Warn("设置资源下载文件名失败",
-				zap.String("file_key", file.FileKey),
-				zap.String("filename", file.Filename),
-				zap.Error(err),
-			)
-		}
-	}
-
 	return &ResourceFinalizeResponse{
 		ResourceID: resource.ID,
 	}, nil
