@@ -117,6 +117,7 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 		config.GlobalConfig.Tencent.SecretKey,
 		TencentCosDownloadURLTTL,
 		opt,
+		false,
 	)
 	if err != nil {
 		return "", err

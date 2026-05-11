@@ -2,8 +2,12 @@ package utils
 
 import (
 	"csu-star-backend/config"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/tencentyun/cos-go-sdk-v5"
 )
 
 func TestBuildDownloadContentDisposition(t *testing.T) {
@@ -50,5 +54,49 @@ func TestApplyCosCDNDomain(t *testing.T) {
 	want := "https://file.csustar.wiki/resources/a.pdf?q-sign-algorithm=sha1&response-content-disposition=attachment"
 	if got != want {
 		t.Fatalf("expected CDN URL %q, got %q", want, got)
+	}
+}
+
+func TestTencentCosDownloadTemporarilyUsesCDNWithoutSigningHost(t *testing.T) {
+	previousConfig := config.GlobalConfig
+	previousClient := cosClient
+	t.Cleanup(func() {
+		config.GlobalConfig = previousConfig
+		cosClient = previousClient
+	})
+
+	config.GlobalConfig = &config.Config{
+		Tencent: config.TencentConfig{
+			SecretID:  "test-ak",
+			SecretKey: "test-sk",
+			Cos: config.CosConfig{
+				CDNDomain: "file.csustar.wiki",
+			},
+		},
+	}
+
+	bucketURL, err := url.Parse("https://bucket-123.cos.ap-guangzhou.myqcloud.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cosClient = cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{})
+
+	got, err := TencentCosDownloadTemporarily("resources/a.pdf", "a.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Host != "file.csustar.wiki" {
+		t.Fatalf("expected CDN host, got %q", parsed.Host)
+	}
+	if parsed.Query().Get("q-header-list") != "" {
+		t.Fatalf("expected host not to be signed, got q-header-list=%q", parsed.Query().Get("q-header-list"))
+	}
+	if parsed.Query().Get("response-content-disposition") == "" {
+		t.Fatalf("expected response-content-disposition to be preserved")
 	}
 }
