@@ -134,8 +134,8 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 	if parsed.Query().Get("q-ak") != "" || parsed.Query().Get("q-signature") != "" {
 		t.Fatalf("expected CDN URL not to include COS signature params, got %q", got)
 	}
-	if parsed.Query().Get("response-content-disposition") == "" {
-		t.Fatalf("expected response-content-disposition to be preserved")
+	if parsed.Query().Get("response-content-disposition") != "" {
+		t.Fatalf("expected CDN URL not to include response-content-disposition, got %q", got)
 	}
 }
 
