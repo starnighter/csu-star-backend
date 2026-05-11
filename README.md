@@ -168,6 +168,29 @@ oauth:
     client_secret: "your_google_secret"
 ```
 
+### CDN 下载文件名配置
+
+资源下载会在临时 URL 上通过 `response-content-disposition` 覆盖 COS 响应头，以支持中文文件名。若腾讯云 CDN 缓存键忽略全部查询参数，CDN 会缓存成不带文件名的响应，表现为浏览器下载文件名乱码或只拿到默认对象名。
+
+`file.csustar.wiki` 的 CDN 缓存键规则需要按 `/resources/*` 单独配置：
+
+1. 参数处理方式选择“忽略指定参数”
+2. 指定忽略参数只填写 `sign`
+3. 不要忽略 `response-content-disposition`
+4. 配置生效后刷新 `/resources/` 目录缓存
+
+验收：
+
+```bash
+curl -I '<resource-download-url>'
+```
+
+期望响应头包含完整文件名：
+
+```http
+content-disposition: attachment; filename="南极星.svg"; filename*=UTF-8''%E5%8D%97%E6%9E%81%E6%98%9F.svg
+```
+
 ### CI/CD 配置
 
 在 GitHub 仓库中配置 Secrets：

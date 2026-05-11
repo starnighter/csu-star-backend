@@ -16,14 +16,21 @@ import (
 
 func TestBuildDownloadContentDisposition(t *testing.T) {
 	disposition := buildDownloadContentDisposition("实验报告 final.py")
-	if !strings.Contains(disposition, `attachment; filename="`) {
-		t.Fatalf("expected attachment filename fallback, got %q", disposition)
+	if !strings.Contains(disposition, `attachment; filename="实验报告 final.py"`) {
+		t.Fatalf("expected UTF-8 quoted filename fallback, got %q", disposition)
 	}
-	if !strings.Contains(disposition, `final.py"`) {
-		t.Fatalf("expected fallback filename to preserve extension and ASCII suffix, got %q", disposition)
-	}
-	if !strings.Contains(disposition, "filename*=UTF-8''%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A%20final.py") {
+	if !strings.Contains(disposition, `filename*=UTF-8''%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A%20final.py`) {
 		t.Fatalf("expected UTF-8 filename*, got %q", disposition)
+	}
+}
+
+func TestBuildDownloadContentDispositionEscapesQuotedFilename(t *testing.T) {
+	disposition := buildDownloadContentDisposition("实验/报\"告\r\nfinal.py")
+	if !strings.Contains(disposition, `filename="实验_报\"告__final.py"`) {
+		t.Fatalf("expected quoted filename to be sanitized and escaped, got %q", disposition)
+	}
+	if !strings.Contains(disposition, `filename*=UTF-8''%E5%AE%9E%E9%AA%8C_%E6%8A%A5%22%E5%91%8A__final.py`) {
+		t.Fatalf("expected filename* to use sanitized UTF-8 filename, got %q", disposition)
 	}
 }
 
@@ -138,8 +145,8 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 	if disposition == "" {
 		t.Fatalf("expected CDN URL to include response-content-disposition, got %q", got)
 	}
-	if !strings.Contains(disposition, `final.pdf"`) {
-		t.Fatalf("expected CDN URL filename fallback to preserve extension and ASCII suffix, got %q", disposition)
+	if !strings.Contains(disposition, `filename="实验报告 final.pdf"`) {
+		t.Fatalf("expected CDN URL filename fallback to preserve UTF-8 name, got %q", disposition)
 	}
 	if !strings.Contains(disposition, "filename*=UTF-8''%E5%AE%9E%E9%AA%8C%E6%8A%A5%E5%91%8A%20final.pdf") {
 		t.Fatalf("expected CDN URL UTF-8 filename*, got %q", disposition)
