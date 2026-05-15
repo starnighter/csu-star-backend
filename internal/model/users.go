@@ -1,9 +1,13 @@
 package model
 
 import (
+	"crypto/md5"
 	"csu-star-backend/pkg/utils"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/datatypes"
@@ -136,6 +140,10 @@ type UserInfo struct {
 func (u *Users) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == 0 {
 		u.ID = utils.GenerateID()
+	}
+	if strings.TrimSpace(u.AvatarUrl) == "" {
+		sum := md5.Sum([]byte(strconv.FormatInt(u.ID, 10)))
+		u.AvatarUrl = "identicon:" + hex.EncodeToString(sum[:])
 	}
 	return nil
 }
