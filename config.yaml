@@ -15,8 +15,8 @@ server:
 
 database:
   dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
-  max_open_conns: 40
-  max_idle_conns: 20
+  max_open_conns: 80
+  max_idle_conns: 40
   conn_max_lifetime_min: 30
   conn_max_idle_time_min: 10
 
@@ -25,6 +25,8 @@ redis:
   addr: "localhost:6379"
   password: "your_redis_password"
   db: 0
+  pool_size: 50
+  min_idle_conns: 10
 
 jwt:
   secret: "your_jwt_secret_key"

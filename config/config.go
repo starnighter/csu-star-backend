@@ -47,10 +47,12 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
-	Username string `mapstructure:"username"`
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	Username     string `mapstructure:"username"`
+	Addr         string `mapstructure:"addr"`
+	Password     string `mapstructure:"password"`
+	DB           int    `mapstructure:"db"`
+	PoolSize     int    `mapstructure:"pool_size"`
+	MinIdleConns int    `mapstructure:"min_idle_conns"`
 }
 
 type JWTConfig struct {
@@ -174,5 +176,25 @@ func Init() error {
 	}
 
 	logger.Log.Info("配置文件加载成功")
+	return nil
+}
+
+func ReloadConfig() error {
+	viper.SetConfigName("config")
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	viper.SetConfigName("config-secret")
+	if err := viper.MergeInConfig(); err != nil {
+		return fmt.Errorf("reload secret config: %w", err)
+	}
+
+	newCfg := &Config{}
+	if err := viper.Unmarshal(newCfg); err != nil {
+		return fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	GlobalConfig = newCfg
+	logger.Log.Info("配置文件热重载成功")
 	return nil
 }

@@ -125,6 +125,12 @@ func main() {
 	scheduler := task.NewScheduler(db, aggregateRepo, courseRepo, teacherRepo, miscRepo)
 	scheduler.Start(appCtx)
 
+	// 初始化邮箱注册轮询服务
+	userRepo := repo.NewUserRepository(db)
+	emailRegSvc := service.NewEmailRegisterService(userRepo)
+	emailRegPoller := task.NewEmailRegisterPoller(emailRegSvc)
+	emailRegPoller.Start(appCtx)
+
 	// 配置HTTP Sever
 	addr := fmt.Sprintf("%s:%v", resolveBindHost(globalCfg.Server.BindHost), globalCfg.Server.Port)
 	srv := &http.Server{
@@ -145,8 +151,20 @@ func main() {
 	}()
 
 	quit := make(chan os.Signal, 1)
+	hup := make(chan os.Signal, 1)
 	// 监听 SIGINT (Ctrl+C) 和 SIGTERM (kill) 信号
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	// 监听 SIGHUP 信号用于配置热重载
+	signal.Notify(hup, syscall.SIGHUP)
+
+	go func() {
+		for range hup {
+			logger.Log.Info("收到 SIGHUP 信号，正在重载配置...")
+			if err := config.ReloadConfig(); err != nil {
+				logger.Log.Error("配置热重载失败", zap.Error(err))
+			}
+		}
+	}()
 
 	// 阻塞等待信号
 	<-quit
