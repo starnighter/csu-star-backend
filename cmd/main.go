@@ -27,6 +27,9 @@ func main() {
 	// 初始化日志配置
 	logger.Init()
 
+	// 生产模式：关闭Gin debug日志
+	//gin.SetMode(gin.ReleaseMode)
+
 	// 初始化配置文件
 	if err := config.Init(); err != nil {
 		logger.Log.Fatal("配置文件初始化失败，服务退出", zap.Error(err))
@@ -144,7 +147,10 @@ func main() {
 
 	// 启动服务
 	go func() {
-		logger.Log.Info("CSU-Star后端服务启动成功，监听端口：" + addr)
+		logger.Log.Info("========================================")
+		logger.Log.Info("  CSU-Star 后端服务已就绪")
+		logger.Log.Info("  监听地址：" + addr)
+		logger.Log.Info("========================================")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Log.Error("监听出现错误：", zap.Error(err))
 		}
@@ -205,7 +211,6 @@ func configureDatabasePool(db *gorm.DB, cfg config.DatabaseConfig) error {
 	if connMaxIdleTime <= 0 {
 		connMaxIdleTime = 10 * time.Minute
 	}
-
 	sqlDB.SetMaxOpenConns(maxOpen)
 	sqlDB.SetMaxIdleConns(maxIdle)
 	sqlDB.SetConnMaxLifetime(connMaxLifetime)
