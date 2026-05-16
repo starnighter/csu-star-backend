@@ -885,7 +885,7 @@ func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[stri
 	if len(updates) == 0 {
 		return nil, ErrAdminInvalidPayload
 	}
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Courses, error) {
+	item, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Courses, error) {
 		item, err := adminRepo.GetCourseByID(courseID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrAdminTargetNotFound
@@ -916,10 +916,14 @@ func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[stri
 		}
 		return item, nil
 	})
+	if err == nil {
+		utils.InvalidateCourseCache(courseID)
+	}
+	return item, err
 }
 
 func (s *AdminService) DeleteCourse(operatorID, courseID int64, ip net.IP) error {
-	return s.withWriteTx(func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) error {
+	err := s.withWriteTx(func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) error {
 		item, err := adminRepo.GetCourseByID(courseID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrAdminTargetNotFound
@@ -948,6 +952,10 @@ func (s *AdminService) DeleteCourse(operatorID, courseID int64, ip net.IP) error
 			IpAddress:  ip,
 		})
 	})
+	if err == nil {
+		utils.InvalidateCourseCache(courseID)
+	}
+	return err
 }
 
 func (s *AdminService) ListCourseRelations(courseID int64) ([]repo.AdminCourseRelationItem, error) {
@@ -1134,7 +1142,7 @@ func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[st
 	if len(updates) == 0 && bio == nil && tutorType == nil && homepageURL == nil {
 		return nil, ErrAdminInvalidPayload
 	}
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*model.Teachers, error) {
+	item, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*model.Teachers, error) {
 		item, err := adminRepo.GetTeacherByID(teacherID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrAdminTargetNotFound
@@ -1179,10 +1187,14 @@ func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[st
 		}
 		return item, nil
 	})
+	if err == nil {
+		utils.InvalidateTeacherCache(teacherID)
+	}
+	return item, err
 }
 
 func (s *AdminService) DeleteTeacher(operatorID, teacherID int64, ip net.IP) error {
-	return s.withWriteTx(func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) error {
+	err := s.withWriteTx(func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) error {
 		item, err := adminRepo.GetTeacherByID(teacherID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrAdminTargetNotFound
@@ -1211,6 +1223,10 @@ func (s *AdminService) DeleteTeacher(operatorID, teacherID int64, ip net.IP) err
 			IpAddress:  ip,
 		})
 	})
+	if err == nil {
+		utils.InvalidateTeacherCache(teacherID)
+	}
+	return err
 }
 
 func (s *AdminService) ListTeacherRelations(teacherID int64) ([]repo.AdminTeacherRelationItem, error) {
