@@ -45,17 +45,18 @@ const registrationInvalidPasswordBody = `尊敬的用户，
 - 长度为 %d~%d 个字符
 - 不能包含空格或换行
 
-请修正后重新发送邮件至本邮箱进行注册。
+请在邮件主题中填写密码，重新发送邮件至本邮箱进行注册。
 
 CSU Star · 南极星Team`
 
-const registrationMismatchBody = `尊敬的用户，
+const registrationEmptySubjectBody = `尊敬的用户，
 
-您的注册请求未通过校验，原因：邮件主题与正文中的密码不一致。
+您的注册请求未通过校验，原因：邮件主题为空，无法提取密码。
 
-请确保邮件主题和正文填写相同的密码，然后重新发送邮件至本邮箱进行注册。
+请在邮件主题中填写您的密码，重新发送邮件至本邮箱进行注册。
 
 CSU Star · 南极星Team`
+
 
 var replyEmailProviderCursor atomic.Uint64
 
@@ -134,12 +135,8 @@ func SendRegistrationInvalidPasswordReplyEmail(to, reason string, minLen, maxLen
 	return errors.Join(errs...)
 }
 
-// SendRegistrationMismatchReplyEmail sends a reply when subject and body passwords don't match.
-func SendRegistrationMismatchReplyEmail(to string) error {
-	return sendSimpleReply(to, registrationMismatchBody)
-}
-
-func sendSimpleReply(to, body string) error {
+// SendRegistrationEmptySubjectReplyEmail sends a reply when the email subject is empty.
+func SendRegistrationEmptySubjectReplyEmail(to string) error {
 	providers := replySMTPProviders()
 	if len(providers) == 0 {
 		return errors.New("no SMTP providers available for reply emails")
@@ -150,9 +147,9 @@ func sendSimpleReply(to, body string) error {
 	var errs []error
 	for offset := range providers {
 		provider := providers[(start+offset)%len(providers)]
-		if err := sendReplyEmailViaSMTP(provider, to, body); err != nil {
+		if err := sendReplyEmailViaSMTP(provider, to, registrationEmptySubjectBody); err != nil {
 			logger.Log.Warn(
-				"回复邮件发送失败，尝试下一个SMTP通道",
+				"主题为空回复邮件发送失败，尝试下一个SMTP通道",
 				zap.String("provider", providerDisplayName(provider)),
 				zap.Error(err),
 			)
@@ -161,7 +158,7 @@ func sendSimpleReply(to, body string) error {
 		}
 
 		logger.Log.Info(
-			"回复邮件发送成功",
+			"主题为空回复邮件发送成功",
 			zap.String("provider", providerDisplayName(provider)),
 			zap.String("to", to),
 		)

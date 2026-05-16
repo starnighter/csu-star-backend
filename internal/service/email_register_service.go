@@ -27,7 +27,7 @@ func NewEmailRegisterService(ur repo.UserRepository) *EmailRegisterService {
 }
 
 // ProcessRegistrationEmail processes a single email message for registration.
-// The password must appear in both the subject and body and must match.
+// The password is extracted from the email subject only.
 // Returns (registered bool, err error).
 func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, body string) (bool, error) {
 	// 1. Normalize and validate sender
@@ -37,27 +37,16 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 		return false, nil
 	}
 
-	// 2. Extract and validate password from subject and body
-	subjectPwd := strings.TrimSpace(subject)
-	bodyPwd := strings.TrimSpace(body)
+	// 2. Extract password from subject
+	password := strings.TrimSpace(subject)
 
-	if subjectPwd == "" || bodyPwd == "" {
-		logger.Log.Warn("邮件主题或正文为空", zap.String("sender", sender))
-		if err := utils.SendRegistrationMismatchReplyEmail(sender); err != nil {
-			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(err))
+	if password == "" {
+		logger.Log.Warn("邮件主题为空", zap.String("sender", sender))
+		if replyErr := utils.SendRegistrationEmptySubjectReplyEmail(sender); replyErr != nil {
+			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(replyErr))
 		}
 		return false, nil
 	}
-
-	if subjectPwd != bodyPwd {
-		logger.Log.Warn("邮件主题与正文密码不一致", zap.String("sender", sender))
-		if err := utils.SendRegistrationMismatchReplyEmail(sender); err != nil {
-			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(err))
-		}
-		return false, nil
-	}
-
-	password := subjectPwd
 
 	// 3. Validate password format
 	cfg := config.GetConfig().Mail.EmailRegister
