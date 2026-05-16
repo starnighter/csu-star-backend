@@ -19,17 +19,17 @@ func TestRenderVerificationEmailHTMLInjectsCaptcha(t *testing.T) {
 }
 
 func TestSendVerificationEmailFallsBackInOrder(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	originalFn := sendVerificationEmailWithFallbackFn
 	originalSMTP := smtpVerificationEmailSender
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 		sendVerificationEmailWithFallbackFn = originalFn
 		smtpVerificationEmailSender = originalSMTP
 		verificationEmailProviderCursor.Store(0)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{
 				Subject: "CSU Star | 南极星邮箱验证码",
@@ -55,7 +55,7 @@ func TestSendVerificationEmailFallsBackInOrder(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	var attempts []string
 	smtpVerificationEmailSender = func(cfg config.SMTPConfig, to []string, captcha string) error {
@@ -78,15 +78,15 @@ func TestSendVerificationEmailFallsBackInOrder(t *testing.T) {
 }
 
 func TestSendVerificationEmailRoundRobinAcrossProviders(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	originalSMTP := smtpVerificationEmailSender
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 		smtpVerificationEmailSender = originalSMTP
 		verificationEmailProviderCursor.Store(0)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{
 				Providers: []config.SMTPConfig{
@@ -96,7 +96,7 @@ func TestSendVerificationEmailRoundRobinAcrossProviders(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	var starts []string
 	smtpVerificationEmailSender = func(cfg config.SMTPConfig, to []string, captcha string) error {
@@ -133,15 +133,15 @@ func TestBuildHTMLMessageUsesSubjectAndHTMLHeaders(t *testing.T) {
 }
 
 func TestSendVerificationEmailReturnsJoinedErrorWhenAllProvidersFail(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	originalSMTP := smtpVerificationEmailSender
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 		smtpVerificationEmailSender = originalSMTP
 		verificationEmailProviderCursor.Store(0)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{
 				Providers: []config.SMTPConfig{
@@ -150,7 +150,7 @@ func TestSendVerificationEmailReturnsJoinedErrorWhenAllProvidersFail(t *testing.
 				},
 			},
 		},
-	}
+	})
 
 	smtpVerificationEmailSender = func(cfg config.SMTPConfig, to []string, captcha string) error {
 		return errors.New(cfg.Name + " failed")
@@ -169,21 +169,21 @@ func TestSendVerificationEmailReturnsJoinedErrorWhenAllProvidersFail(t *testing.
 }
 
 func TestHasVerificationEmailFallbackProvider(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{},
 		},
-	}
+	})
 	if HasVerificationEmailFallbackProvider() {
 		t.Fatal("expected false when no smtp provider is configured")
 	}
 
-	config.GlobalConfig.Mail.Verification.Providers = []config.SMTPConfig{
+	config.GetConfig().Mail.Verification.Providers = []config.SMTPConfig{
 		{
 			Name:          "provider-a",
 			Host:          "smtp.qq.com",
@@ -199,15 +199,15 @@ func TestHasVerificationEmailFallbackProvider(t *testing.T) {
 }
 
 func TestSendVerificationEmailFallsBackToNextProviderOnFailure(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	originalSMTP := smtpVerificationEmailSender
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 		smtpVerificationEmailSender = originalSMTP
 		verificationEmailProviderCursor.Store(0)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{
 				Providers: []config.SMTPConfig{
@@ -216,7 +216,7 @@ func TestSendVerificationEmailFallsBackToNextProviderOnFailure(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	var attempts []string
 	smtpVerificationEmailSender = func(cfg config.SMTPConfig, to []string, captcha string) error {
@@ -238,16 +238,16 @@ func TestSendVerificationEmailFallsBackToNextProviderOnFailure(t *testing.T) {
 }
 
 func TestSendVerificationEmailUsesDefaultSubjectWhenConfigBlank(t *testing.T) {
-	originalCfg := config.GlobalConfig
+	originalCfg := config.GetConfig()
 	t.Cleanup(func() {
-		config.GlobalConfig = originalCfg
+		config.SetConfig(originalCfg)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Mail: config.MailConfig{
 			Verification: config.VerificationMailConfig{},
 		},
-	}
+	})
 
 	message := string(buildHTMLMessage("CSU Star", "noreply@csustar.wiki", []string{"test@csu.edu.cn"}, defaultVerificationEmailSubject(), "<b>123456</b>"))
 	if !strings.Contains(message, "Subject: CSU Star | 南极星邮箱验证码") {

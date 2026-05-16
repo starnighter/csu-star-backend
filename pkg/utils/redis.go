@@ -15,20 +15,20 @@ var (
 )
 
 func InitRedis() {
-	poolSize := config.GlobalConfig.Redis.PoolSize
+	poolSize := config.GetConfig().Redis.PoolSize
 	if poolSize <= 0 {
 		poolSize = 50
 	}
-	minIdle := config.GlobalConfig.Redis.MinIdleConns
+	minIdle := config.GetConfig().Redis.MinIdleConns
 	if minIdle <= 0 {
 		minIdle = 10
 	}
 
 	RDB = redis.NewClient(&redis.Options{
-		Username:     config.GlobalConfig.Redis.Username,
-		Addr:         config.GlobalConfig.Redis.Addr,
-		Password:     config.GlobalConfig.Redis.Password,
-		DB:           config.GlobalConfig.Redis.DB,
+		Username:     config.GetConfig().Redis.Username,
+		Addr:         config.GetConfig().Redis.Addr,
+		Password:     config.GetConfig().Redis.Password,
+		DB:           config.GetConfig().Redis.DB,
 		PoolSize:     poolSize,
 		MinIdleConns: minIdle,
 	})

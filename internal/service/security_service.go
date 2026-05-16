@@ -43,10 +43,10 @@ func NewSecurityService(db *gorm.DB) *SecurityService {
 }
 
 func (s *SecurityService) Mode() string {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return "enforce"
 	}
-	mode := strings.TrimSpace(strings.ToLower(config.GlobalConfig.Security.Mode))
+	mode := strings.TrimSpace(strings.ToLower(config.GetConfig().Security.Mode))
 	if mode == "" {
 		return "enforce"
 	}

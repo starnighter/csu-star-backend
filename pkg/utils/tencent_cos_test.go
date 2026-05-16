@@ -47,12 +47,12 @@ func TestBuildASCIIFallbackFilename(t *testing.T) {
 }
 
 func TestBuildTencentCDNDownloadURL(t *testing.T) {
-	previousConfig := config.GlobalConfig
+	previousConfig := config.GetConfig()
 	t.Cleanup(func() {
-		config.GlobalConfig = previousConfig
+		config.SetConfig(previousConfig)
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Tencent: config.TencentConfig{
 			Cos: config.CosConfig{
 				CDNDomain:         "file.csustar.wiki",
@@ -62,7 +62,7 @@ func TestBuildTencentCDNDownloadURL(t *testing.T) {
 				CDNAuthTTLSeconds: 300,
 			},
 		},
-	}
+	})
 
 	query := url.Values{}
 	query.Set("response-content-disposition", "attachment")
@@ -96,14 +96,14 @@ func TestBuildTencentCDNDownloadURL(t *testing.T) {
 }
 
 func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
-	previousConfig := config.GlobalConfig
+	previousConfig := config.GetConfig()
 	previousClient := cosClient
 	t.Cleanup(func() {
-		config.GlobalConfig = previousConfig
+		config.SetConfig(previousConfig)
 		cosClient = previousClient
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Tencent: config.TencentConfig{
 			SecretID:  "test-ak",
 			SecretKey: "test-sk",
@@ -115,7 +115,7 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 				CDNAuthTTLSeconds: 300,
 			},
 		},
-	}
+	})
 
 	bucketURL, err := url.Parse("https://bucket-123.cos.ap-guangzhou.myqcloud.com")
 	if err != nil {
@@ -154,14 +154,14 @@ func TestTencentCosDownloadTemporarilyUsesCDNAuth(t *testing.T) {
 }
 
 func TestTencentCosDownloadTemporarilyFallsBackToCOSPresignedURL(t *testing.T) {
-	previousConfig := config.GlobalConfig
+	previousConfig := config.GetConfig()
 	previousClient := cosClient
 	t.Cleanup(func() {
-		config.GlobalConfig = previousConfig
+		config.SetConfig(previousConfig)
 		cosClient = previousClient
 	})
 
-	config.GlobalConfig = &config.Config{
+	config.SetConfig(&config.Config{
 		Tencent: config.TencentConfig{
 			SecretID:  "test-ak",
 			SecretKey: "test-sk",
@@ -169,7 +169,7 @@ func TestTencentCosDownloadTemporarilyFallsBackToCOSPresignedURL(t *testing.T) {
 				CDNDomain: "file.csustar.wiki",
 			},
 		},
-	}
+	})
 
 	bucketURL, err := url.Parse("https://bucket-123.cos.ap-guangzhou.myqcloud.com")
 	if err != nil {

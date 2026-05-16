@@ -1,14 +1,34 @@
 package config
 
 import (
-	"csu-star-backend/logger"
 	"fmt"
+	"sync"
+
+	"csu-star-backend/logger"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-var GlobalConfig *Config
+var (
+	GlobalConfig *Config
+	configMu     sync.RWMutex
+)
+
+// GetConfig returns the current config safely. Always use this instead of
+// reading GlobalConfig directly from goroutines.
+func GetConfig() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return GlobalConfig
+}
+
+// SetConfig sets the config safely. Intended for use in tests.
+func SetConfig(cfg *Config) {
+	configMu.Lock()
+	GlobalConfig = cfg
+	configMu.Unlock()
+}
 
 type Config struct {
 	App       AppConfig       `mapstructure:"app"`
@@ -103,6 +123,7 @@ type IMAPConfig struct {
 type EmailRegisterConfig struct {
 	Enabled         bool   `mapstructure:"enabled"`
 	PollIntervalSec int    `mapstructure:"poll_interval_sec"`
+	IdleRefreshSec  int    `mapstructure:"idle_refresh_sec"`
 	AllowedSuffix   string `mapstructure:"allowed_suffix"`
 	MinPasswordLen  int    `mapstructure:"min_password_len"`
 	MaxPasswordLen  int    `mapstructure:"max_password_len"`
@@ -169,11 +190,15 @@ func Init() error {
 		return fmt.Errorf("merge secret config: %w", err)
 	}
 
-	GlobalConfig = &Config{}
-	if err := viper.Unmarshal(GlobalConfig); err != nil {
+	cfg := &Config{}
+	if err := viper.Unmarshal(cfg); err != nil {
 		logger.Log.Error("解析配置文件失败：", zap.Error(err))
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
+
+	configMu.Lock()
+	GlobalConfig = cfg
+	configMu.Unlock()
 
 	logger.Log.Info("配置文件加载成功")
 	return nil
@@ -194,7 +219,10 @@ func ReloadConfig() error {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	configMu.Lock()
 	GlobalConfig = newCfg
+	configMu.Unlock()
+
 	logger.Log.Info("配置文件热重载成功")
 	return nil
 }

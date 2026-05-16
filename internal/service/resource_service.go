@@ -87,10 +87,10 @@ func (s *ResourceService) SetSecurityService(securitySvc *SecurityService) {
 }
 
 func (s *ResourceService) resourceRateLimitEnabled() bool {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return true
 	}
-	return config.GlobalConfig.Security.ResourceRateLimitEnabled
+	return config.GetConfig().Security.ResourceRateLimitEnabled
 }
 
 func (s *ResourceService) ListResources(query repo.ResourceListQuery) ([]repo.ResourceListItem, int64, error) {

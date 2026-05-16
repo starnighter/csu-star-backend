@@ -49,6 +49,14 @@ const registrationInvalidPasswordBody = `尊敬的用户，
 
 CSU Star · 南极星Team`
 
+const registrationMismatchBody = `尊敬的用户，
+
+您的注册请求未通过校验，原因：邮件主题与正文中的密码不一致。
+
+请确保邮件主题和正文填写相同的密码，然后重新发送邮件至本邮箱进行注册。
+
+CSU Star · 南极星Team`
+
 var replyEmailProviderCursor atomic.Uint64
 
 func SendRegistrationReplyEmail(to string, success bool) error {
@@ -126,6 +134,43 @@ func SendRegistrationInvalidPasswordReplyEmail(to, reason string, minLen, maxLen
 	return errors.Join(errs...)
 }
 
+// SendRegistrationMismatchReplyEmail sends a reply when subject and body passwords don't match.
+func SendRegistrationMismatchReplyEmail(to string) error {
+	return sendSimpleReply(to, registrationMismatchBody)
+}
+
+func sendSimpleReply(to, body string) error {
+	providers := replySMTPProviders()
+	if len(providers) == 0 {
+		return errors.New("no SMTP providers available for reply emails")
+	}
+
+	start := int(replyEmailProviderCursor.Add(1)-1) % len(providers)
+
+	var errs []error
+	for offset := range providers {
+		provider := providers[(start+offset)%len(providers)]
+		if err := sendReplyEmailViaSMTP(provider, to, body); err != nil {
+			logger.Log.Warn(
+				"回复邮件发送失败，尝试下一个SMTP通道",
+				zap.String("provider", providerDisplayName(provider)),
+				zap.Error(err),
+			)
+			errs = append(errs, fmt.Errorf("%s: %w", providerDisplayName(provider), err))
+			continue
+		}
+
+		logger.Log.Info(
+			"回复邮件发送成功",
+			zap.String("provider", providerDisplayName(provider)),
+			zap.String("to", to),
+		)
+		return nil
+	}
+
+	return errors.Join(errs...)
+}
+
 func sendReplyEmailViaSMTP(cfg config.SMTPConfig, to string, body string) error {
 	if !isCompleteSMTPConfig(cfg) {
 		return errors.New("smtp config is incomplete")
@@ -141,15 +186,16 @@ func sendReplyEmailViaSMTP(cfg config.SMTPConfig, to string, body string) error 
 
 func buildPlainTextMessage(fromName, fromEmail string, to []string, subject, body string) []byte {
 	headers := map[string]string{
-		"From":         formatMailAddress(fromName, fromEmail),
-		"To":           strings.Join(to, ","),
-		"Subject":      subject,
-		"MIME-Version": "1.0",
-		"Content-Type": "text/plain; charset=UTF-8",
+		"From":              formatMailAddress(fromName, fromEmail),
+		"To":                strings.Join(to, ","),
+		"Subject":           subject,
+		"MIME-Version":      "1.0",
+		"Content-Type":      "text/plain; charset=UTF-8",
+		replyHeaderKey:      "true",
 	}
 
 	var builder strings.Builder
-	for _, key := range []string{"From", "To", "Subject", "MIME-Version", "Content-Type"} {
+	for _, key := range []string{"From", "To", "Subject", "MIME-Version", "Content-Type", replyHeaderKey} {
 		builder.WriteString(fmt.Sprintf("%s: %s\r\n", key, headers[key]))
 	}
 	builder.WriteString("\r\n")
@@ -159,14 +205,14 @@ func buildPlainTextMessage(fromName, fromEmail string, to []string, subject, bod
 
 // replySMTPProviders returns all complete SMTP providers except the IMAP mailbox.
 func replySMTPProviders() []config.SMTPConfig {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return nil
 	}
 
-	imapUser := strings.TrimSpace(strings.ToLower(config.GlobalConfig.Mail.Imap.Username))
+	imapUser := strings.TrimSpace(strings.ToLower(config.GetConfig().Mail.Imap.Username))
 
-	providers := make([]config.SMTPConfig, 0, len(config.GlobalConfig.Mail.Verification.Providers))
-	for _, provider := range config.GlobalConfig.Mail.Verification.Providers {
+	providers := make([]config.SMTPConfig, 0, len(config.GetConfig().Mail.Verification.Providers))
+	for _, provider := range config.GetConfig().Mail.Verification.Providers {
 		if !isCompleteSMTPConfig(provider) {
 			continue
 		}

@@ -27,9 +27,9 @@ func NewEmailRegisterService(ur repo.UserRepository) *EmailRegisterService {
 }
 
 // ProcessRegistrationEmail processes a single email message for registration.
-// The password is extracted from the email subject line.
+// The password must appear in both the subject and body and must match.
 // Returns (registered bool, err error).
-func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject string) (bool, error) {
+func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, body string) (bool, error) {
 	// 1. Normalize and validate sender
 	sender := strings.TrimSpace(strings.ToLower(senderEmail))
 	if !strings.HasSuffix(sender, constant.SchoolEmailSuffix) {
@@ -37,15 +37,30 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject str
 		return false, nil
 	}
 
-	// 2. Extract password from subject
-	password := strings.TrimSpace(subject)
-	if password == "" {
-		logger.Log.Warn("邮件主题为空，未包含有效密码", zap.String("sender", sender))
+	// 2. Extract and validate password from subject and body
+	subjectPwd := strings.TrimSpace(subject)
+	bodyPwd := strings.TrimSpace(body)
+
+	if subjectPwd == "" || bodyPwd == "" {
+		logger.Log.Warn("邮件主题或正文为空", zap.String("sender", sender))
+		if err := utils.SendRegistrationMismatchReplyEmail(sender); err != nil {
+			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(err))
+		}
 		return false, nil
 	}
 
-	// 3. Validate password
-	cfg := config.GlobalConfig.Mail.EmailRegister
+	if subjectPwd != bodyPwd {
+		logger.Log.Warn("邮件主题与正文密码不一致", zap.String("sender", sender))
+		if err := utils.SendRegistrationMismatchReplyEmail(sender); err != nil {
+			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(err))
+		}
+		return false, nil
+	}
+
+	password := subjectPwd
+
+	// 3. Validate password format
+	cfg := config.GetConfig().Mail.EmailRegister
 	if reason, ok := validateEmailPassword(password, cfg); !ok {
 		logger.Log.Warn("密码校验不通过", zap.String("sender", sender), zap.String("reason", reason))
 		if replyErr := utils.SendRegistrationInvalidPasswordReplyEmail(sender, reason, cfg.MinPasswordLen, cfg.MaxPasswordLen); replyErr != nil {
@@ -54,14 +69,11 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject str
 		return false, nil
 	}
 
-	// 4. Rate limit by sender email (max 3 per day)
+	// 4. Rate limit by sender email (max 3 per day, atomic INCR + EXPIRE)
 	rateLimitKey := constant.EmailRegisterRateLimitPrefix + sender
-	count, err := utils.RDB.Incr(utils.Ctx, rateLimitKey).Result()
+	count, err := incrWithExpiry(rateLimitKey, 24*time.Hour)
 	if err != nil {
 		return false, err
-	}
-	if count == 1 {
-		utils.RDB.Expire(utils.Ctx, rateLimitKey, 24*time.Hour)
 	}
 	if count > 3 {
 		logger.Log.Warn("邮箱注册频率超限", zap.String("sender", sender))
@@ -115,6 +127,17 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject str
 	}
 
 	return true, nil
+}
+
+// incrWithExpiry atomically increments a Redis key and sets expiry on first increment.
+func incrWithExpiry(key string, ttl time.Duration) (int64, error) {
+	pipe := utils.RDB.Pipeline()
+	incrCmd := pipe.Incr(utils.Ctx, key)
+	pipe.Expire(utils.Ctx, key, ttl)
+	if _, err := pipe.Exec(utils.Ctx); err != nil {
+		return 0, err
+	}
+	return incrCmd.Val(), nil
 }
 
 // validateEmailPassword checks the password meets all requirements.

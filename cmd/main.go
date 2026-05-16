@@ -31,7 +31,7 @@ func main() {
 	if err := config.Init(); err != nil {
 		logger.Log.Fatal("配置文件初始化失败，服务退出", zap.Error(err))
 	}
-	globalCfg := config.GlobalConfig
+	globalCfg := config.GetConfig()
 
 	// 初始化雪花算法及Redis
 	utils.InitSnowflake(globalCfg.Snowflake.NodeID)

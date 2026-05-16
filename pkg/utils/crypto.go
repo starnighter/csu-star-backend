@@ -31,14 +31,14 @@ type CustomClaims struct {
 
 // GenerateTokenPair 生成 accessToken 以及 refreshToken
 func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
-	secret := []byte(config.GlobalConfig.JWT.Secret)
+	secret := []byte(config.GetConfig().JWT.Secret)
 
 	accessClaims := CustomClaims{
 		UserID:   userID,
 		UserRole: userRole,
 		Type:     "access",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GlobalConfig.JWT.AccessExpiration) * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GetConfig().JWT.AccessExpiration) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -53,7 +53,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 		UserRole: userRole,
 		Type:     "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GlobalConfig.JWT.RefreshExpiration) * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(config.GetConfig().JWT.RefreshExpiration) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -69,7 +69,7 @@ func GenerateTokenPair(userID int64, userRole string) (string, string, error) {
 // ParseToken 解析 JWT Token
 func ParseToken(tokenStr string) (*CustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(config.GlobalConfig.JWT.Secret), nil
+		return []byte(config.GetConfig().JWT.Secret), nil
 	})
 	if err != nil {
 		logger.Log.Error("解析令牌失败：", zap.Error(err))

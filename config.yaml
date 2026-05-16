@@ -78,7 +78,8 @@ mail:
     password: "your_foxmail_password"
   email_register:
     enabled: true
-    poll_interval_sec: 30
+    poll_interval_sec: 1800
+    idle_refresh_sec: 600
     allowed_suffix: "@csu.edu.cn"
     min_password_len: 6
     max_password_len: 128
