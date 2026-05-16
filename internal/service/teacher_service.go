@@ -1057,3 +1057,4 @@ func (s *TeacherService) attachTeacherRankingCourses(items []repo.TeacherRanking
 	}
 	return nil
 }
+
