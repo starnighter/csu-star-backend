@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -27,8 +28,8 @@ func main() {
 	// 初始化日志配置
 	logger.Init()
 
-	// 生产模式：关闭Gin debug日志
-	//gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
+	logger.Log.Info("Gin运行模式：" + gin.Mode())
 
 	// 初始化配置文件
 	if err := config.Init(); err != nil {
