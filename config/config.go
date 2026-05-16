@@ -86,7 +86,24 @@ type CosConfig struct {
 }
 
 type MailConfig struct {
-	Verification VerificationMailConfig `mapstructure:"verification"`
+	Verification  VerificationMailConfig `mapstructure:"verification"`
+	Imap          IMAPConfig             `mapstructure:"imap"`
+	EmailRegister EmailRegisterConfig    `mapstructure:"email_register"`
+}
+
+type IMAPConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
+type EmailRegisterConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	PollIntervalSec int    `mapstructure:"poll_interval_sec"`
+	AllowedSuffix   string `mapstructure:"allowed_suffix"`
+	MinPasswordLen  int    `mapstructure:"min_password_len"`
+	MaxPasswordLen  int    `mapstructure:"max_password_len"`
 }
 
 type VerificationMailConfig struct {

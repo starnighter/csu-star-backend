@@ -4,6 +4,7 @@ import (
 	"context"
 	"csu-star-backend/config"
 	"csu-star-backend/internal/repo"
+	"csu-star-backend/internal/service"
 	"csu-star-backend/internal/task"
 	"csu-star-backend/logger"
 	"csu-star-backend/pkg/utils"

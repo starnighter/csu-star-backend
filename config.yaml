@@ -69,6 +69,17 @@ mail:
         password: "your_126_smtp_password"
         from_email_addr: "your_126_username"
         from_name: "CSU Star"
+  imap:
+    host: "imap.qq.com"
+    port: 993
+    username: "your_foxmail_username"
+    password: "your_foxmail_password"
+  email_register:
+    enabled: true
+    poll_interval_sec: 30
+    allowed_suffix: "@csu.edu.cn"
+    min_password_len: 6
+    max_password_len: 128
 
 oauth:
   qq:
