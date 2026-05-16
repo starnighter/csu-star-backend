@@ -37,9 +37,9 @@ type FileInfo struct {
 func InitTencentCos() error {
 	u, err := url.Parse(fmt.Sprintf(
 		"https://%s-%s.cos.%s.myqcloud.com",
-		config.GlobalConfig.Tencent.Cos.Bucket,
-		config.GlobalConfig.Tencent.Cos.AppID,
-		config.GlobalConfig.Tencent.Cos.Region,
+		config.GetConfig().Tencent.Cos.Bucket,
+		config.GetConfig().Tencent.Cos.AppID,
+		config.GetConfig().Tencent.Cos.Region,
 	))
 	if err != nil {
 		return err
@@ -48,8 +48,8 @@ func InitTencentCos() error {
 	b := &cos.BaseURL{BucketURL: u}
 	cosClient = cos.NewClient(b, &http.Client{
 		Transport: &cos.AuthorizationTransport{
-			SecretID:  config.GlobalConfig.Tencent.SecretID,
-			SecretKey: config.GlobalConfig.Tencent.SecretKey,
+			SecretID:  config.GetConfig().Tencent.SecretID,
+			SecretKey: config.GetConfig().Tencent.SecretKey,
 		},
 	})
 	return nil
@@ -119,8 +119,8 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 		context.Background(),
 		http.MethodGet,
 		cosKey,
-		config.GlobalConfig.Tencent.SecretID,
-		config.GlobalConfig.Tencent.SecretKey,
+		config.GetConfig().Tencent.SecretID,
+		config.GetConfig().Tencent.SecretKey,
 		TencentCosDownloadURLTTL,
 		opt,
 		false,
@@ -133,11 +133,11 @@ func TencentCosDownloadTemporarily(cosKey, downloadName string) (fileUrl string,
 }
 
 func shouldUseCDNAuth() bool {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return false
 	}
 
-	cosConfig := config.GlobalConfig.Tencent.Cos
+	cosConfig := config.GetConfig().Tencent.Cos
 	return cosConfig.CDNAuthEnabled &&
 		strings.EqualFold(strings.TrimSpace(cosConfig.CDNAuthType), "A") &&
 		strings.TrimSpace(cosConfig.CDNDomain) != "" &&
@@ -149,7 +149,7 @@ func buildTencentCDNDownloadURL(cosKey string, query url.Values, now time.Time) 
 		query = url.Values{}
 	}
 
-	cosConfig := config.GlobalConfig.Tencent.Cos
+	cosConfig := config.GetConfig().Tencent.Cos
 	baseURL, err := normalizeCDNBaseURL(cosConfig.CDNDomain)
 	if err != nil {
 		return "", err
@@ -315,8 +315,8 @@ func TencentCosUploadTemporarily(cosKey string) (string, error) {
 		context.Background(),
 		http.MethodPut,
 		cosKey,
-		config.GlobalConfig.Tencent.SecretID,
-		config.GlobalConfig.Tencent.SecretKey,
+		config.GetConfig().Tencent.SecretID,
+		config.GetConfig().Tencent.SecretKey,
 		2*time.Hour,
 		nil,
 	)

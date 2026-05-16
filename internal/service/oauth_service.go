@@ -121,10 +121,10 @@ func (s *OauthService) handleQQ(code string) (model.UserInfo, error) {
 	// 通过code获取accessToken
 	tokenReqUrl := fmt.Sprintf(
 		"https://graph.qq.com/oauth2.0/token?client_id=%s&client_secret=%s&code=%s&redirect_uri=%s&fmt=json&need_openid=1&grant_type=authorization_code",
-		config.GlobalConfig.Oauth.QQ.AppID,
-		config.GlobalConfig.Oauth.QQ.AppKey,
+		config.GetConfig().Oauth.QQ.AppID,
+		config.GetConfig().Oauth.QQ.AppKey,
 		code,
-		config.GlobalConfig.Oauth.QQ.RedirectUri,
+		config.GetConfig().Oauth.QQ.RedirectUri,
 	)
 	tokenReq, err := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *OauthService) handleQQ(code string) (model.UserInfo, error) {
 	userReqUrl := fmt.Sprintf(
 		"https://graph.qq.com/user/get_user_info?access_token=%s&oauth_consumer_key=%s&openid=%s",
 		qqTokenResp.AccessToken,
-		config.GlobalConfig.Oauth.QQ.AppID,
+		config.GetConfig().Oauth.QQ.AppID,
 		qqTokenResp.OpenID,
 	)
 	userReq, err := http.NewRequest(http.MethodGet, userReqUrl, nil)
@@ -213,8 +213,8 @@ func (s *OauthService) handleWechat(code string) (model.UserInfo, error) {
 	// 通过code获取accessToken
 	tokenReqUrl := fmt.Sprintf(
 		"https://api.weixin.qq.com/sns/oauth2/access_token?appid=%s&secret=%s&code=%s&grant_type=authorization_code",
-		config.GlobalConfig.Oauth.Wechat.AppID,
-		config.GlobalConfig.Oauth.Wechat.AppSecret,
+		config.GetConfig().Oauth.Wechat.AppID,
+		config.GetConfig().Oauth.Wechat.AppSecret,
 		code,
 	)
 	tokenReq, _ := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
@@ -284,9 +284,9 @@ func (s *OauthService) handleGitHub(code string, codeVerifier string) (model.Use
 	loginErr := &constant.LoginByGitHubFailedErr
 
 	conf := &oauth2.Config{
-		ClientID:     config.GlobalConfig.Oauth.GitHub.ClientID,
-		ClientSecret: config.GlobalConfig.Oauth.GitHub.ClientSecret,
-		RedirectURL:  config.GlobalConfig.Oauth.GitHub.RedirectUri,
+		ClientID:     config.GetConfig().Oauth.GitHub.ClientID,
+		ClientSecret: config.GetConfig().Oauth.GitHub.ClientSecret,
+		RedirectURL:  config.GetConfig().Oauth.GitHub.RedirectUri,
 		Endpoint:     github.Endpoint,
 	}
 
@@ -333,9 +333,9 @@ func (s *OauthService) handleGoogle(code string, codeVerifier string) (model.Use
 	loginErr := &constant.LoginByGoogleFailedErr
 
 	conf := &oauth2.Config{
-		ClientID:     config.GlobalConfig.Oauth.Google.ClientID,
-		ClientSecret: config.GlobalConfig.Oauth.Google.ClientSecret,
-		RedirectURL:  config.GlobalConfig.Oauth.Google.RedirectUri,
+		ClientID:     config.GetConfig().Oauth.Google.ClientID,
+		ClientSecret: config.GetConfig().Oauth.Google.ClientSecret,
+		RedirectURL:  config.GetConfig().Oauth.Google.RedirectUri,
 		Scopes: []string{
 			"https://www.googleapis.com/auth/userinfo.profile",
 			"https://www.googleapis.com/auth/userinfo.email",

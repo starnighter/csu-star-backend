@@ -271,7 +271,7 @@ func SendVerificationEmail(to []string, captcha string) error {
 }
 
 func HasVerificationEmailFallbackProvider() bool {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return false
 	}
 
@@ -325,7 +325,7 @@ func sendVerificationEmailViaSMTP(cfg config.SMTPConfig, to []string, captcha st
 		return errors.New("smtp config is incomplete")
 	}
 
-	subject := strings.TrimSpace(config.GlobalConfig.Mail.Verification.Subject)
+	subject := strings.TrimSpace(config.GetConfig().Mail.Verification.Subject)
 	if subject == "" {
 		subject = defaultVerificationEmailSubject()
 	}
@@ -377,12 +377,12 @@ func isCompleteSMTPConfig(cfg config.SMTPConfig) bool {
 }
 
 func verificationSMTPProviders() []config.SMTPConfig {
-	if config.GlobalConfig == nil {
+	if config.GetConfig() == nil {
 		return nil
 	}
 
-	providers := make([]config.SMTPConfig, 0, len(config.GlobalConfig.Mail.Verification.Providers))
-	for _, provider := range config.GlobalConfig.Mail.Verification.Providers {
+	providers := make([]config.SMTPConfig, 0, len(config.GetConfig().Mail.Verification.Providers))
+	for _, provider := range config.GetConfig().Mail.Verification.Providers {
 		if !isCompleteSMTPConfig(provider) {
 			continue
 		}

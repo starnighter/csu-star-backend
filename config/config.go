@@ -1,14 +1,34 @@
 package config
 
 import (
-	"csu-star-backend/logger"
 	"fmt"
+	"sync"
+
+	"csu-star-backend/logger"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-var GlobalConfig *Config
+var (
+	GlobalConfig *Config
+	configMu     sync.RWMutex
+)
+
+// GetConfig returns the current config safely. Always use this instead of
+// reading GlobalConfig directly from goroutines.
+func GetConfig() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return GlobalConfig
+}
+
+// SetConfig sets the config safely. Intended for use in tests.
+func SetConfig(cfg *Config) {
+	configMu.Lock()
+	GlobalConfig = cfg
+	configMu.Unlock()
+}
 
 type Config struct {
 	App       AppConfig       `mapstructure:"app"`
@@ -47,10 +67,12 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
-	Username string `mapstructure:"username"`
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	Username     string `mapstructure:"username"`
+	Addr         string `mapstructure:"addr"`
+	Password     string `mapstructure:"password"`
+	DB           int    `mapstructure:"db"`
+	PoolSize     int    `mapstructure:"pool_size"`
+	MinIdleConns int    `mapstructure:"min_idle_conns"`
 }
 
 type JWTConfig struct {
@@ -86,7 +108,25 @@ type CosConfig struct {
 }
 
 type MailConfig struct {
-	Verification VerificationMailConfig `mapstructure:"verification"`
+	Verification  VerificationMailConfig `mapstructure:"verification"`
+	Imap          IMAPConfig             `mapstructure:"imap"`
+	EmailRegister EmailRegisterConfig    `mapstructure:"email_register"`
+}
+
+type IMAPConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
+type EmailRegisterConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	PollIntervalSec int    `mapstructure:"poll_interval_sec"`
+	IdleRefreshSec  int    `mapstructure:"idle_refresh_sec"`
+	AllowedSuffix   string `mapstructure:"allowed_suffix"`
+	MinPasswordLen  int    `mapstructure:"min_password_len"`
+	MaxPasswordLen  int    `mapstructure:"max_password_len"`
 }
 
 type VerificationMailConfig struct {
@@ -150,12 +190,39 @@ func Init() error {
 		return fmt.Errorf("merge secret config: %w", err)
 	}
 
-	GlobalConfig = &Config{}
-	if err := viper.Unmarshal(GlobalConfig); err != nil {
+	cfg := &Config{}
+	if err := viper.Unmarshal(cfg); err != nil {
 		logger.Log.Error("解析配置文件失败：", zap.Error(err))
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	configMu.Lock()
+	GlobalConfig = cfg
+	configMu.Unlock()
+
 	logger.Log.Info("配置文件加载成功")
+	return nil
+}
+
+func ReloadConfig() error {
+	viper.SetConfigName("config")
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+	viper.SetConfigName("config-secret")
+	if err := viper.MergeInConfig(); err != nil {
+		return fmt.Errorf("reload secret config: %w", err)
+	}
+
+	newCfg := &Config{}
+	if err := viper.Unmarshal(newCfg); err != nil {
+		return fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	configMu.Lock()
+	GlobalConfig = newCfg
+	configMu.Unlock()
+
+	logger.Log.Info("配置文件热重载成功")
 	return nil
 }

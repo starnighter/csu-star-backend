@@ -9,8 +9,10 @@ import (
 	"csu-star-backend/pkg/utils"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -24,6 +26,11 @@ var (
 	ErrCourseTeacherRelationNotFound  = errors.New("course teacher relation not found")
 	ErrCourseEvaluationReplyNotFound  = errors.New("course evaluation reply not found")
 	ErrCourseEvaluationReplyForbidden = errors.New("course evaluation reply forbidden")
+)
+
+const (
+	courseDetailCacheTTL = 10 * time.Minute
+	courseListCacheTTL   = 5 * time.Minute
 )
 
 type CourseService struct {
@@ -42,6 +49,38 @@ func (s *CourseService) ListCourses(query repo.CourseListQuery) ([]repo.CourseLi
 	if query.Sort == "" {
 		query.Sort = "avg_score"
 	}
+
+	if query.Q == "" {
+		cacheKey := fmt.Sprintf("cache:course:list:%d:%d:%s:%s", query.Page, query.Size, query.Sort, query.CourseType)
+		cached, err := utils.RDB.Get(utils.Ctx, cacheKey).Bytes()
+		if err == nil {
+			var result struct {
+				Items []repo.CourseListItem `json:"items"`
+				Total int64                 `json:"total"`
+			}
+			if json.Unmarshal(cached, &result) == nil {
+				return result.Items, result.Total, nil
+			}
+		} else if err != redis.Nil {
+			logger.Log.Warn("课程列表缓存读取失败", zap.Error(err))
+		}
+
+		items, total, dbErr := s.courseRepo.FindCourses(query)
+		if dbErr != nil {
+			return nil, 0, dbErr
+		}
+
+		if data, marshalErr := json.Marshal(struct {
+			Items []repo.CourseListItem `json:"items"`
+			Total int64                 `json:"total"`
+		}{Items: items, Total: total}); marshalErr == nil {
+			if setErr := utils.RDB.Set(utils.Ctx, cacheKey, data, courseListCacheTTL).Err(); setErr != nil {
+				logger.Log.Warn("课程列表缓存写入失败", zap.Error(setErr))
+			}
+		}
+		return items, total, nil
+	}
+
 	return s.courseRepo.FindCourses(query)
 }
 
@@ -50,6 +89,25 @@ func (s *CourseService) ListSimpleCourses(q string) ([]repo.CourseSimpleItem, er
 }
 
 func (s *CourseService) GetCourseDetail(id int64, viewerID int64) (*repo.CourseDetail, error) {
+	cacheKey := fmt.Sprintf("cache:course:detail:%d", id)
+
+	cached, err := utils.RDB.Get(utils.Ctx, cacheKey).Bytes()
+	if err == nil {
+		var detail repo.CourseDetail
+		if json.Unmarshal(cached, &detail) == nil {
+			if viewerID > 0 {
+				favorited, err := s.socialRepo.HasFavorite(viewerID, model.FavoriteTargetTypeCourse, detail.ID)
+				if err != nil {
+					return nil, err
+				}
+				detail.IsFavorited = favorited
+			}
+			return &detail, nil
+		}
+	} else if err != redis.Nil {
+		logger.Log.Warn("课程详情缓存读取失败", zap.Error(err))
+	}
+
 	detail, err := s.courseRepo.FindCourseDetail(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrCourseDetailNotFound
@@ -57,6 +115,13 @@ func (s *CourseService) GetCourseDetail(id int64, viewerID int64) (*repo.CourseD
 	if err != nil {
 		return nil, err
 	}
+
+	if data, marshalErr := json.Marshal(detail); marshalErr == nil {
+		if setErr := utils.RDB.Set(utils.Ctx, cacheKey, data, courseDetailCacheTTL).Err(); setErr != nil {
+			logger.Log.Warn("课程详情缓存写入失败", zap.Error(setErr))
+		}
+	}
+
 	if viewerID > 0 {
 		favorited, err := s.socialRepo.HasFavorite(viewerID, model.FavoriteTargetTypeCourse, detail.ID)
 		if err != nil {
@@ -254,6 +319,10 @@ func (s *CourseService) CreateCourseEvaluation(userID, courseID int64, input mod
 	if txErr != nil {
 		return nil, txErr
 	}
+	utils.InvalidateCourseCache(courseID)
+	if input.TeacherID != nil {
+		utils.InvalidateTeacherCache(*input.TeacherID)
+	}
 	return &input, nil
 }
 
@@ -323,7 +392,8 @@ func (s *CourseService) CreateCourseTeacherRelation(courseID, teacherID int64) (
 	if txErr != nil {
 		return nil, txErr
 	}
-
+	utils.InvalidateCourseCache(courseID)
+	utils.InvalidateTeacherCache(teacherID)
 	return relation, nil
 }
 
@@ -344,7 +414,7 @@ func (s *CourseService) CancelCourseTeacherRelation(courseID, teacherID int64) e
 		return ErrTeacherNotFound
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		relation, err := s.teacherRepoWithTx(tx).GetCourseTeacherRelation(courseID, teacherID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrCourseTeacherRelationNotFound
@@ -366,6 +436,12 @@ func (s *CourseService) CancelCourseTeacherRelation(courseID, teacherID int64) e
 		}
 		return s.teacherRepoWithTx(tx).RecalculateTeacherStats(teacherID)
 	})
+	if err != nil {
+		return err
+	}
+	utils.InvalidateCourseCache(courseID)
+	utils.InvalidateTeacherCache(teacherID)
+	return nil
 }
 
 func (s *CourseService) GetCourseEvaluationItem(id int64, viewerID int64) (*repo.CourseEvaluationItem, error) {
@@ -579,6 +655,10 @@ func (s *CourseService) UpdateCourseEvaluation(userID int64, userRole string, ev
 	if txErr != nil {
 		return nil, txErr
 	}
+	utils.InvalidateCourseCache(evaluation.CourseID)
+	for _, tid := range appendTeacherRefreshIDs(oldTeacherID, evaluation.TeacherID) {
+		utils.InvalidateTeacherCache(tid)
+	}
 	return evaluation, nil
 }
 
@@ -614,6 +694,10 @@ func (s *CourseService) DeleteCourseEvaluation(userID int64, userRole string, ev
 	})
 	if txErr != nil {
 		return txErr
+	}
+	utils.InvalidateCourseCache(evaluation.CourseID)
+	if evaluation.TeacherID != nil {
+		utils.InvalidateTeacherCache(*evaluation.TeacherID)
 	}
 	return nil
 }

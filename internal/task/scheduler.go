@@ -106,6 +106,9 @@ func (s *Scheduler) runRefresh() {
 		{period: "week", since: &weekAgo},
 		{period: "month", since: &monthAgo},
 	} {
+		if err := s.aggregateRepo.RefreshTeacherRankings(item.period, item.since); err != nil {
+			logger.Log.Error("刷新教师排行榜失败", zap.String("period", item.period), zap.Error(err))
+		}
 		if err := s.aggregateRepo.RefreshCourseRankings(item.period, item.since); err != nil {
 			logger.Log.Error("刷新课程排行榜失败", zap.String("period", item.period), zap.Error(err))
 		}
@@ -336,25 +339,6 @@ func expireRedisKeys(keys map[string]struct{}) error {
 	}
 	_, err := pipe.Exec(utils.Ctx)
 	return err
-}
-
-func deleteKeysByPattern(pattern string) error {
-	var cursor uint64
-	for {
-		keys, nextCursor, err := utils.RDB.Scan(utils.Ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return err
-		}
-		if len(keys) > 0 {
-			if err := utils.RDB.Del(utils.Ctx, keys...).Err(); err != nil {
-				return err
-			}
-		}
-		cursor = nextCursor
-		if cursor == 0 {
-			return nil
-		}
-	}
 }
 
 func addSnapshotMember(snapshots map[string]map[string]float64, key, member string, score float64) {

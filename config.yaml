@@ -15,8 +15,8 @@ server:
 
 database:
   dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
-  max_open_conns: 40
-  max_idle_conns: 20
+  max_open_conns: 80
+  max_idle_conns: 40
   conn_max_lifetime_min: 30
   conn_max_idle_time_min: 10
 
@@ -25,6 +25,8 @@ redis:
   addr: "localhost:6379"
   password: "your_redis_password"
   db: 0
+  pool_size: 50
+  min_idle_conns: 10
 
 jwt:
   secret: "your_jwt_secret_key"
@@ -69,6 +71,18 @@ mail:
         password: "your_126_smtp_password"
         from_email_addr: "your_126_username"
         from_name: "CSU Star"
+  imap:
+    host: "imap.qq.com"
+    port: 993
+    username: "your_foxmail_username"
+    password: "your_foxmail_password"
+  email_register:
+    enabled: true
+    poll_interval_sec: 1800
+    idle_refresh_sec: 600
+    allowed_suffix: "@csu.edu.cn"
+    min_password_len: 6
+    max_password_len: 128
 
 oauth:
   qq:

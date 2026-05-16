@@ -9,8 +9,11 @@ import (
 	"csu-star-backend/pkg/utils"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -28,7 +31,11 @@ var (
 	ErrEvaluationAssociationIncomplete = errors.New("evaluation association incomplete")
 )
 
-const teacherEvaluationEnabled = false
+const (
+	teacherEvaluationEnabled = false
+	teacherDetailCacheTTL    = 10 * time.Minute
+	teacherListCacheTTL      = 5 * time.Minute
+)
 
 type TeacherService struct {
 	db          *gorm.DB
@@ -46,6 +53,38 @@ func (s *TeacherService) ListTeachers(query repo.TeacherListQuery) ([]repo.Teach
 	if query.Sort == "" {
 		query.Sort = "avg_score"
 	}
+
+	if query.Q == "" {
+		cacheKey := fmt.Sprintf("cache:teacher:list:%d:%d:%s:%d", query.Page, query.Size, query.Sort, query.DepartmentID)
+		cached, err := utils.RDB.Get(utils.Ctx, cacheKey).Bytes()
+		if err == nil {
+			var result struct {
+				Items []repo.TeacherListItem `json:"items"`
+				Total int64                  `json:"total"`
+			}
+			if json.Unmarshal(cached, &result) == nil {
+				return result.Items, result.Total, nil
+			}
+		} else if err != redis.Nil {
+			logger.Log.Warn("教师列表缓存读取失败", zap.Error(err))
+		}
+
+		items, total, dbErr := s.teacherRepo.FindTeachers(query)
+		if dbErr != nil {
+			return nil, 0, dbErr
+		}
+
+		if data, marshalErr := json.Marshal(struct {
+			Items []repo.TeacherListItem `json:"items"`
+			Total int64                  `json:"total"`
+		}{Items: items, Total: total}); marshalErr == nil {
+			if setErr := utils.RDB.Set(utils.Ctx, cacheKey, data, teacherListCacheTTL).Err(); setErr != nil {
+				logger.Log.Warn("教师列表缓存写入失败", zap.Error(setErr))
+			}
+		}
+		return items, total, nil
+	}
+
 	return s.teacherRepo.FindTeachers(query)
 }
 
@@ -54,6 +93,25 @@ func (s *TeacherService) ListSimpleTeachers(q string) ([]repo.TeacherSimpleItem,
 }
 
 func (s *TeacherService) GetTeacherDetail(id int64, viewerID int64) (*repo.TeacherDetail, error) {
+	cacheKey := fmt.Sprintf("cache:teacher:detail:%d", id)
+
+	cached, err := utils.RDB.Get(utils.Ctx, cacheKey).Bytes()
+	if err == nil {
+		var detail repo.TeacherDetail
+		if json.Unmarshal(cached, &detail) == nil {
+			if viewerID > 0 {
+				favorited, err := s.socialRepo.HasFavorite(viewerID, model.FavoriteTargetTypeTeacher, detail.ID)
+				if err != nil {
+					return nil, err
+				}
+				detail.IsFavorited = favorited
+			}
+			return &detail, nil
+		}
+	} else if err != redis.Nil {
+		logger.Log.Warn("教师详情缓存读取失败", zap.Error(err))
+	}
+
 	detail, err := s.teacherRepo.FindTeacherDetail(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrTeacherNotFound
@@ -61,6 +119,13 @@ func (s *TeacherService) GetTeacherDetail(id int64, viewerID int64) (*repo.Teach
 	if err != nil {
 		return nil, err
 	}
+
+	if data, marshalErr := json.Marshal(detail); marshalErr == nil {
+		if setErr := utils.RDB.Set(utils.Ctx, cacheKey, data, teacherDetailCacheTTL).Err(); setErr != nil {
+			logger.Log.Warn("教师详情缓存写入失败", zap.Error(setErr))
+		}
+	}
+
 	if viewerID > 0 {
 		favorited, err := s.socialRepo.HasFavorite(viewerID, model.FavoriteTargetTypeTeacher, detail.ID)
 		if err != nil {
@@ -250,6 +315,10 @@ func (s *TeacherService) CreateTeacherEvaluation(userID, teacherID int64, input 
 	})
 	if txErr != nil {
 		return nil, txErr
+	}
+	utils.InvalidateTeacherCache(teacherID)
+	if input.CourseID != nil {
+		utils.InvalidateCourseCache(*input.CourseID)
 	}
 	return &input, nil
 }
@@ -465,6 +534,10 @@ func (s *TeacherService) UpdateTeacherEvaluation(userID int64, userRole string, 
 	if txErr != nil {
 		return nil, txErr
 	}
+	utils.InvalidateTeacherCache(evaluation.TeacherID)
+	for _, cid := range appendCourseRefreshIDs(oldCourseID, evaluation.CourseID) {
+		utils.InvalidateCourseCache(cid)
+	}
 	return evaluation, nil
 }
 
@@ -500,6 +573,10 @@ func (s *TeacherService) DeleteTeacherEvaluation(userID int64, userRole string, 
 	})
 	if txErr != nil {
 		return txErr
+	}
+	utils.InvalidateTeacherCache(evaluation.TeacherID)
+	if evaluation.CourseID != nil {
+		utils.InvalidateCourseCache(*evaluation.CourseID)
 	}
 	return nil
 }
@@ -980,3 +1057,4 @@ func (s *TeacherService) attachTeacherRankingCourses(items []repo.TeacherRanking
 	}
 	return nil
 }
+
