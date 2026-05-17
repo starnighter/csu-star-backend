@@ -28,14 +28,18 @@ func main() {
 	// 初始化日志配置
 	logger.Init()
 
-	gin.SetMode(gin.ReleaseMode)
-	logger.Log.Info("Gin运行模式：" + gin.Mode())
-
 	// 初始化配置文件
 	if err := config.Init(); err != nil {
 		logger.Log.Fatal("配置文件初始化失败，服务退出", zap.Error(err))
 	}
 	globalCfg := config.GetConfig()
+
+	if globalCfg.App.Mode == "prod" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+	logger.Log.Info("Gin运行模式：" + gin.Mode())
 
 	// 初始化雪花算法及Redis
 	utils.InitSnowflake(globalCfg.Snowflake.NodeID)
