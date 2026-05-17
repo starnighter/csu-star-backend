@@ -182,6 +182,22 @@ func (m *miscRepositoryStub) UpdateCourseSupplementRequest(id int64, updates map
 	return nil
 }
 
+func (m *miscRepositoryStub) GetContributionScore(userID int64) (int, error) {
+	return 0, nil
+}
+
+func (m *miscRepositoryStub) GetContributionLevel(userID int64) (int, error) {
+	return 0, nil
+}
+
+func (m *miscRepositoryStub) ComputeTotalContributionScore(userID int64) (int, error) {
+	return 0, nil
+}
+
+func (m *miscRepositoryStub) RefreshContributionScore(userID int64, score int, level int) error {
+	return nil
+}
+
 type socialRepositoryStub struct {
 	resourceExists          bool
 	teacherEvaluationExists bool

@@ -97,6 +97,7 @@ type ContributionCell struct {
 
 type ContributionSummary struct {
 	Weeks         [][]ContributionCell `json:"weeks"`
+	TotalScore    int                  `json:"total_score"`
 	ActiveDays    int                  `json:"active_days"`
 	CurrentStreak int                  `json:"current_streak"`
 	MaxDayScore   int                  `json:"max_day_score"`
