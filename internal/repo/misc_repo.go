@@ -97,7 +97,6 @@ type ContributionCell struct {
 
 type ContributionSummary struct {
 	Weeks         [][]ContributionCell `json:"weeks"`
-	TotalScore    int                  `json:"total_score"`
 	ActiveDays    int                  `json:"active_days"`
 	CurrentStreak int                  `json:"current_streak"`
 	MaxDayScore   int                  `json:"max_day_score"`
@@ -153,6 +152,10 @@ type MiscRepository interface {
 	ListMyFavorites(userID int64, targetType string, page, size int) ([]FavoriteItem, int64, error)
 	ListMyPoints(userID int64, page, size int) ([]PointRecordItem, int64, error)
 	ListMyContributionEvents(userID int64, start, end time.Time) ([]ContributionEvent, error)
+	GetContributionScore(userID int64) (int, error)
+	GetContributionLevel(userID int64) (int, error)
+	ComputeTotalContributionScore(userID int64) (int, error)
+	RefreshContributionScore(userID int64, score int, level int) error
 	ListAnnouncements() ([]AnnouncementItem, error)
 	GetShowcaseStats() (*ShowcaseStats, error)
 	CreateFeedback(feedback *model.Feedbacks) error
@@ -468,6 +471,53 @@ func (r *miscRepository) ListMyContributionEvents(userID int64, start, end time.
 		userID, model.PointsTypeInvite, start, end,
 	).Scan(&items).Error
 	return items, err
+}
+
+func (r *miscRepository) GetContributionScore(userID int64) (int, error) {
+	var score int
+	err := r.db.Table("user_contributions").
+		Select("contribution_score").
+		Where("user_id = ?", userID).
+		Scan(&score).Error
+	return score, err
+}
+
+func (r *miscRepository) GetContributionLevel(userID int64) (int, error) {
+	var level int
+	err := r.db.Table("user_contributions").
+		Select("level").
+		Where("user_id = ?", userID).
+		Scan(&level).Error
+	return level, err
+}
+
+func (r *miscRepository) ComputeTotalContributionScore(userID int64) (int, error) {
+	var total int
+	err := r.db.Raw(`
+		SELECT COALESCE(SUM(score), 0) FROM (
+			SELECT 2 AS score FROM resources WHERE uploader_id = ?
+			UNION ALL
+			SELECT 1 AS score FROM teacher_evaluations WHERE user_id = ?
+			UNION ALL
+			SELECT 1 AS score FROM course_evaluations WHERE user_id = ?
+			UNION ALL
+			SELECT 1 AS score FROM points_records WHERE user_id = ? AND type = ?
+			UNION ALL
+			SELECT 3 AS score FROM points_records WHERE user_id = ? AND type = ?
+		) AS all_events
+	`, userID, userID, userID, userID, model.PointsTypeCheckin, userID, model.PointsTypeInvite).Scan(&total).Error
+	return total, err
+}
+
+func (r *miscRepository) RefreshContributionScore(userID int64, score int, level int) error {
+	return r.db.Exec(`
+		INSERT INTO user_contributions (user_id, contribution_score, level, updated_at)
+		VALUES (?, ?, ?, NOW())
+		ON CONFLICT (user_id) DO UPDATE SET
+			contribution_score = EXCLUDED.contribution_score,
+			level = EXCLUDED.level,
+			updated_at = NOW()
+	`, userID, score, level).Error
 }
 
 func (r *miscRepository) ListAnnouncements() ([]AnnouncementItem, error) {

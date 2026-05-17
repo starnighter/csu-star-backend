@@ -66,6 +66,9 @@ func (s *MiscService) DailyCheckin(userID int64) (int, error) {
 	if errors.Is(err, repo.ErrAlreadyCheckedIn) {
 		return balance, ErrAlreadyCheckedIn
 	}
+	if err == nil {
+		_ = s.RefreshAfterContribution(userID)
+	}
 	return balance, err
 }
 
@@ -164,11 +167,56 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 
 	return &repo.ContributionSummary{
 		Weeks:         weeks,
-		TotalScore:    totalScore,
 		ActiveDays:    activeDays,
 		CurrentStreak: currentStreak,
 		MaxDayScore:   maxDayScore,
 	}, nil
+}
+
+func ScoreToLevel(score int) int {
+	if score <= 0 {
+		return 1
+	}
+	level := 1
+	remaining := score
+	bracket := 1
+	for level < 100 && remaining > 0 {
+		perLevel := 5 + (bracket-1)*10
+		levelsInBracket := 10
+		if level < bracket*10 {
+			levelsInBracket = bracket*10 - level + 1
+		}
+		needed := levelsInBracket * perLevel
+		if remaining >= needed {
+			level += levelsInBracket
+			remaining -= needed
+		} else {
+			level += remaining / perLevel
+			remaining = 0
+		}
+		bracket++
+	}
+	if level > 100 {
+		level = 100
+	}
+	return level
+}
+
+func (s *MiscService) GetMyContributionScore(userID int64) (int, error) {
+	return s.miscRepo.GetContributionScore(userID)
+}
+
+func (s *MiscService) GetMyContributionLevel(userID int64) (int, error) {
+	return s.miscRepo.GetContributionLevel(userID)
+}
+
+func (s *MiscService) RefreshAfterContribution(userID int64) error {
+	score, err := s.miscRepo.ComputeTotalContributionScore(userID)
+	if err != nil {
+		return err
+	}
+	level := ScoreToLevel(score)
+	return s.miscRepo.RefreshContributionScore(userID, score, level)
 }
 
 func (s *MiscService) ListAnnouncements() ([]repo.AnnouncementItem, error) {

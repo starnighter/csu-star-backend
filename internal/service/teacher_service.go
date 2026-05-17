@@ -42,10 +42,15 @@ type TeacherService struct {
 	teacherRepo repo.TeacherRepository
 	courseRepo  repo.CourseRepository
 	socialRepo  repo.SocialRepository
+	miscSvc     *MiscService
 }
 
 func NewTeacherService(db *gorm.DB, tr repo.TeacherRepository, cr repo.CourseRepository, sr repo.SocialRepository) *TeacherService {
 	return &TeacherService{db: db, teacherRepo: tr, courseRepo: cr, socialRepo: sr}
+}
+
+func (s *TeacherService) SetMiscService(miscSvc *MiscService) {
+	s.miscSvc = miscSvc
 }
 
 func (s *TeacherService) ListTeachers(query repo.TeacherListQuery) ([]repo.TeacherListItem, int64, error) {
@@ -315,6 +320,9 @@ func (s *TeacherService) CreateTeacherEvaluation(userID, teacherID int64, input 
 	})
 	if txErr != nil {
 		return nil, txErr
+	}
+	if s.miscSvc != nil {
+		_ = s.miscSvc.RefreshAfterContribution(userID)
 	}
 	utils.InvalidateTeacherCache(teacherID)
 	if input.CourseID != nil {
@@ -1057,4 +1065,3 @@ func (s *TeacherService) attachTeacherRankingCourses(items []repo.TeacherRanking
 	}
 	return nil
 }
-

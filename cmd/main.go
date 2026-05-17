@@ -104,6 +104,9 @@ func main() {
 	if err := ensureAuditLogActions(db); err != nil {
 		logger.Log.Error("补齐审计动作枚举失败：", zap.Error(err))
 	}
+	if err := ensureUserContributionTable(db); err != nil {
+		logger.Log.Error("补齐用户贡献值表失败：", zap.Error(err))
+	}
 
 	// 初始化OAuth Client
 	oauthClient := utils.NewHttpClient(10*time.Second, 100)
@@ -421,6 +424,21 @@ func ensureAuditLogActions(db *gorm.DB) error {
 			WHEN duplicate_object THEN NULL;
 		END
 		$$;
+	`).Error
+}
+
+func ensureUserContributionTable(db *gorm.DB) error {
+	return db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_contributions (
+			user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			contribution_score INTEGER NOT NULL DEFAULT 0,
+			level SMALLINT NOT NULL DEFAULT 1 CHECK (level >= 1 AND level <= 100),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+
+		INSERT INTO user_contributions (user_id)
+		SELECT id FROM users
+		ON CONFLICT (user_id) DO NOTHING;
 	`).Error
 }
 

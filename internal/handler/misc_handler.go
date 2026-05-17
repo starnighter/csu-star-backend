@@ -135,6 +135,26 @@ func (h *MiscHandler) GetMyContributions(c *gin.Context) {
 	resp.Success(c, item)
 }
 
+func (h *MiscHandler) GetMyContributionScore(c *gin.Context) {
+	userID := c.MustGet(constant.GinUserID).(int64)
+	score, err := h.miscSvc.GetMyContributionScore(userID)
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	resp.Success(c, gin.H{"score": score})
+}
+
+func (h *MiscHandler) GetMyContributionLevel(c *gin.Context) {
+	userID := c.MustGet(constant.GinUserID).(int64)
+	level, err := h.miscSvc.GetMyContributionLevel(userID)
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	resp.Success(c, gin.H{"level": level})
+}
+
 func (h *MiscHandler) GetAnnouncements(c *gin.Context) {
 	items, err := h.miscSvc.ListAnnouncements()
 	if err != nil {

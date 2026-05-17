@@ -25,6 +25,8 @@ func SetUpMiscRouter(r *gin.Engine, miscHandler *handler.MiscHandler) {
 		authGroup.GET("/me/favorites", miscHandler.GetMyFavorites)
 		authGroup.GET("/me/points", miscHandler.GetMyPoints)
 		authGroup.GET("/me/contributions", miscHandler.GetMyContributions)
+		authGroup.GET("/me/contribution-score", miscHandler.GetMyContributionScore)
+		authGroup.GET("/me/contribution-level", miscHandler.GetMyContributionLevel)
 		authGroup.GET("/me/notifications", miscHandler.GetNotifications)
 		authGroup.GET("/me/home-notification-summary", miscHandler.GetHomeNotificationSummary)
 		authGroup.GET("/me/notifications/unread-count", miscHandler.GetUnreadCount)

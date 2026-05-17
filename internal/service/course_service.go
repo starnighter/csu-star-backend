@@ -38,10 +38,15 @@ type CourseService struct {
 	courseRepo  repo.CourseRepository
 	teacherRepo repo.TeacherRepository
 	socialRepo  repo.SocialRepository
+	miscSvc     *MiscService
 }
 
 func NewCourseService(db *gorm.DB, cr repo.CourseRepository, tr repo.TeacherRepository, sr repo.SocialRepository) *CourseService {
 	return &CourseService{db: db, courseRepo: cr, teacherRepo: tr, socialRepo: sr}
+}
+
+func (s *CourseService) SetMiscService(miscSvc *MiscService) {
+	s.miscSvc = miscSvc
 }
 
 func (s *CourseService) ListCourses(query repo.CourseListQuery) ([]repo.CourseListItem, int64, error) {
@@ -318,6 +323,9 @@ func (s *CourseService) CreateCourseEvaluation(userID, courseID int64, input mod
 	})
 	if txErr != nil {
 		return nil, txErr
+	}
+	if s.miscSvc != nil {
+		_ = s.miscSvc.RefreshAfterContribution(userID)
 	}
 	utils.InvalidateCourseCache(courseID)
 	if input.TeacherID != nil {
