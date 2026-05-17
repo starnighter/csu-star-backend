@@ -192,7 +192,7 @@ content-disposition: attachment; filename="南极星.svg"; filename*=UTF-8''%E5%
 ```
 
 ### CI/CD 配置
-
+```测试CI CD```
 在 GitHub 仓库中配置 Secrets：
 - SSH_HOST: 远程服务器地址
 - SSH_USERNAME: 远程服务器登录用户名
