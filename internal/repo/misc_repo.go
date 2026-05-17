@@ -442,30 +442,28 @@ func (r *miscRepository) ListMyContributionEvents(userID int64, start, end time.
 			UNION ALL
 
 			SELECT
-				'daily_checkin' AS event_type,
-				'每日签到' AS label,
-				1 AS score,
+				CASE type
+					WHEN 'checkin'::points_type THEN 'daily_checkin'
+					WHEN 'invite'::points_type THEN 'invite_reward'
+				END AS event_type,
+				CASE type
+					WHEN 'checkin'::points_type THEN '每日签到'
+					WHEN 'invite'::points_type THEN '邀请奖励'
+				END AS label,
+				CASE type
+					WHEN 'checkin'::points_type THEN 1
+					WHEN 'invite'::points_type THEN 3
+				END AS score,
 				created_at AS occurred_at
 			FROM points_records
-			WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
-
-			UNION ALL
-
-			SELECT
-				'invite_reward' AS event_type,
-				'邀请奖励' AS label,
-				3 AS score,
-				created_at AS occurred_at
-			FROM points_records
-			WHERE user_id = ? AND type = ? AND created_at >= ? AND created_at < ?
+			WHERE user_id = ? AND type IN (?, ?) AND created_at >= ? AND created_at < ?
 		) AS contribution_events
 		ORDER BY occurred_at ASC
 	`,
 		userID, start, end,
 		userID, start, end,
 		userID, start, end,
-		userID, model.PointsTypeCheckin, start, end,
-		userID, model.PointsTypeInvite, start, end,
+		userID, model.PointsTypeCheckin, model.PointsTypeInvite, start, end,
 	).Scan(&items).Error
 	return items, err
 }
