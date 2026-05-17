@@ -167,6 +167,7 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 
 	return &repo.ContributionSummary{
 		Weeks:         weeks,
+		TotalScore:    totalScore,
 		ActiveDays:    activeDays,
 		CurrentStreak: currentStreak,
 		MaxDayScore:   maxDayScore,
