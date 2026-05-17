@@ -46,6 +46,7 @@ type Config struct {
 type AppConfig struct {
 	Name    string `mapstructure:"name"`
 	Version string `mapstructure:"version"`
+	Mode    string `mapstructure:"mode"`
 }
 
 type ServerConfig struct {

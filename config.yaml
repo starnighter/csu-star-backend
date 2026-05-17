@@ -1,6 +1,7 @@
 app:
   name: "CSU-Star"
   version: "1.0.0"
+  mode: "prod" # dev 或 prod
 
 server:
   bind_host: "127.0.0.1"
