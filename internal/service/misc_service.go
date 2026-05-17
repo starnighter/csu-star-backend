@@ -120,7 +120,6 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 	}
 
 	weeks := make([][]repo.ContributionCell, 0, contributionWeeks)
-	totalScore := 0
 	activeDays := 0
 	maxDayScore := 0
 
@@ -138,7 +137,6 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 				actions = append(actions, day.Actions...)
 			}
 			if !isFuture && score > 0 {
-				totalScore += score
 				activeDays += 1
 				if score > maxDayScore {
 					maxDayScore = score
@@ -167,7 +165,6 @@ func (s *MiscService) GetMyContributionSummary(userID int64) (*repo.Contribution
 
 	return &repo.ContributionSummary{
 		Weeks:         weeks,
-		TotalScore:    totalScore,
 		ActiveDays:    activeDays,
 		CurrentStreak: currentStreak,
 		MaxDayScore:   maxDayScore,

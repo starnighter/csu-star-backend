@@ -360,7 +360,7 @@ func (r *courseRepository) FindCourseDetail(id int64) (*CourseDetail, error) {
 func (r *courseRepository) FindCourseResourceCollectionDetail(query CourseResourceCollectionQuery) (*CourseResourceCollectionDetail, error) {
 	var course CourseBrief
 	err := r.db.Table("courses").
-		Select("id, name, credits, course_type").
+		Select("id, code, name, credits, course_type").
 		Where("id = ? AND status = ?", query.CourseID, model.CourseStatusActive).
 		Scan(&course).Error
 	if err != nil {
@@ -370,7 +370,6 @@ func (r *courseRepository) FindCourseResourceCollectionDetail(query CourseResour
 		return nil, gorm.ErrRecordNotFound
 	}
 	course.DetailPath = CourseDetailPath(course.ID)
-	course.Code = course.Code
 	course.ResourceCollectionPath = CourseResourceCollectionPath(course.ID)
 
 	detail := &CourseResourceCollectionDetail{
