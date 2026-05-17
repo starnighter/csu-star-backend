@@ -21,6 +21,7 @@ type AuthService struct {
 	userRepo       repo.UserRepository
 	invitationRepo repo.InvitationRepository
 	securitySvc    *SecurityService
+	miscSvc        *MiscService
 }
 
 func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthService {
@@ -29,6 +30,10 @@ func NewAuthService(ur repo.UserRepository, ir repo.InvitationRepository) *AuthS
 
 func (s *AuthService) SetSecurityService(securitySvc *SecurityService) {
 	s.securitySvc = securitySvc
+}
+
+func (s *AuthService) SetMiscService(miscSvc *MiscService) {
+	s.miscSvc = miscSvc
 }
 
 func (s *AuthService) SendCaptcha(email string, isNotExists bool) (string, error) {
@@ -177,6 +182,10 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 		if err := s.userRepo.RewardInviter(consumedInviterID); err != nil {
 			logger.Log.Error("使用邀请码创建新用户后，发放邀请奖励失败：", zap.Error(err))
 			return err
+		}
+		if s.miscSvc != nil {
+			_ = s.miscSvc.RefreshAfterContribution(user.ID)
+			_ = s.miscSvc.RefreshAfterContribution(consumedInviterID)
 		}
 	}
 

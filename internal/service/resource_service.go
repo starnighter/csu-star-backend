@@ -46,6 +46,7 @@ type ResourceService struct {
 	courseRepo   repo.CourseRepository
 	socialRepo   repo.SocialRepository
 	securitySvc  *SecurityService
+	miscSvc      *MiscService
 }
 
 type ResourceUploadURLItem struct {
@@ -84,6 +85,10 @@ func NewResourceService(db *gorm.DB, rr repo.ResourceRepository, cr repo.CourseR
 
 func (s *ResourceService) SetSecurityService(securitySvc *SecurityService) {
 	s.securitySvc = securitySvc
+}
+
+func (s *ResourceService) SetMiscService(miscSvc *MiscService) {
+	s.miscSvc = miscSvc
 }
 
 func (s *ResourceService) resourceRateLimitEnabled() bool {
@@ -334,6 +339,10 @@ func (s *ResourceService) FinalizeResourceUpload(userID int64, sessionID string)
 		_ = s.cleanupUploadSessionObjects(session)
 		_ = s.deleteUploadSession(session.ID)
 		return nil, err
+	}
+
+	if s.miscSvc != nil {
+		_ = s.miscSvc.RefreshAfterContribution(userID)
 	}
 
 	if err := s.deleteUploadSession(session.ID); err != nil {

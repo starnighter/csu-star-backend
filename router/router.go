@@ -46,6 +46,10 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	authSvc.SetSecurityService(securitySvc)
 	oauthSvc.SetSecurityService(securitySvc)
 	resourceSvc.SetSecurityService(securitySvc)
+	resourceSvc.SetMiscService(miscSvc)
+	teacherSvc.SetMiscService(miscSvc)
+	courseSvc.SetMiscService(miscSvc)
+	authSvc.SetMiscService(miscSvc)
 	middlewarepackage.InitSecurityService(securitySvc)
 
 	// 初始化handler
