@@ -36,18 +36,27 @@ func (s *AuthService) SetMiscService(miscSvc *MiscService) {
 	s.miscSvc = miscSvc
 }
 
-func (s *AuthService) SendCaptcha(email string, isNotExists bool) (string, error) {
+func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) {
 	normalizedEmail, err := normalizeSchoolEmail(email)
 	if err != nil {
 		return "", err
 	}
 
-	if isNotExists {
+	switch purpose {
+	case "register":
 		userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
 		if userByEmail != nil {
 			return "", &constant.UserHasRegisteredErr
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", err
+		}
+	case "forget_password":
+		userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
+		if errors.Is(err, gorm.ErrRecordNotFound) || userByEmail == nil {
+			return "", &constant.UserNotExistErr
+		}
+		if err != nil {
 			return "", err
 		}
 	}
