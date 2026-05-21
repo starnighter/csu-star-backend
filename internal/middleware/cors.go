@@ -15,6 +15,7 @@ var allowedCORSHosts = map[string]struct{}{
 	"admin.csustar.wiki": {},
 	"csustar.wiki":       {},
 	"www.csustar.wiki":   {},
+	"csustar.com":        {},
 }
 
 func CORS() gin.HandlerFunc {

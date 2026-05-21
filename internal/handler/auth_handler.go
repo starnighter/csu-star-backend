@@ -58,8 +58,7 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
-	_, isNotExists := c.Get(constant.GinUserID)
-	msg, err := h.authSvc.SendCaptcha(r.Email, isNotExists)
+	msg, err := h.authSvc.SendCaptcha(r.Email, r.Purpose)
 	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
 		return
@@ -70,6 +69,10 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 	}
 	if errors.Is(err, &constant.UserHasRegisteredErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserHasRegisteredErr.Code, constant.UserHasRegisteredErr.Msg)
+		return
+	}
+	if errors.Is(err, &constant.UserNotExistErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
 		return
 	}
 	if err != nil {
