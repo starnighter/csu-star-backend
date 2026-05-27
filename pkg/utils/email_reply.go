@@ -21,7 +21,7 @@ const registrationSuccessBody = `尊敬的用户，
 邮箱：%s
 密码：已安全存储（请妥善保管）
 
-您可以前往 https://csustar.wiki/login 使用邮箱登录。
+您可以前往 https://csustar.com/login/ 使用邮箱登录。
 
 如有问题，请联系管理员。
 
@@ -31,7 +31,7 @@ const registrationAlreadyExistsBody = `尊敬的用户，
 
 您的邮箱 %s 已经注册过 CSU Star 账号，请直接登录。
 
-登录地址：https://csustar.wiki/login
+登录地址：https://csustar.com/login/
 
 如忘记密码，请使用"忘记密码"功能重置。
 
@@ -56,7 +56,6 @@ const registrationEmptySubjectBody = `尊敬的用户，
 请在邮件主题中填写您的密码，重新发送邮件至本邮箱进行注册。
 
 CSU Star · 南极星Team`
-
 
 var replyEmailProviderCursor atomic.Uint64
 
@@ -183,12 +182,12 @@ func sendReplyEmailViaSMTP(cfg config.SMTPConfig, to string, body string) error 
 
 func buildPlainTextMessage(fromName, fromEmail string, to []string, subject, body string) []byte {
 	headers := map[string]string{
-		"From":              formatMailAddress(fromName, fromEmail),
-		"To":                strings.Join(to, ","),
-		"Subject":           subject,
-		"MIME-Version":      "1.0",
-		"Content-Type":      "text/plain; charset=UTF-8",
-		replyHeaderKey:      "true",
+		"From":         formatMailAddress(fromName, fromEmail),
+		"To":           strings.Join(to, ","),
+		"Subject":      subject,
+		"MIME-Version": "1.0",
+		"Content-Type": "text/plain; charset=UTF-8",
+		replyHeaderKey: "true",
 	}
 
 	var builder strings.Builder

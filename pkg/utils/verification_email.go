@@ -167,7 +167,7 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
         </div>
 
         <div style="text-align: center; margin: 0 auto 30px auto">
-          <a href="https://csustar.wiki/login" class="mobile-cta" style="
+          <a href="https://csustar.com/login/" class="mobile-cta" style="
               display: inline-block;
               background: linear-gradient(135deg, #2563eb, #93c5fd);
               color: #fff;
