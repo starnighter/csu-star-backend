@@ -346,6 +346,7 @@ func (h *MiscHandler) ListSupplementRequests(c *gin.Context) {
 		return
 	}
 
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.miscSvc.ListSupplementRequests(repo.SupplementRequestListQuery{
 		Status:      r.Status,
 		RequestType: r.RequestType,
@@ -358,7 +359,7 @@ func (h *MiscHandler) ListSupplementRequests(c *gin.Context) {
 		return
 	}
 
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *MiscHandler) GetSupplementRequest(c *gin.Context) {

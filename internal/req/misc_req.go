@@ -68,7 +68,7 @@ type SupplementRequestListReq struct {
 	RequestType string `form:"request_type" binding:"omitempty,oneof=teacher course"`
 	Keyword     string `form:"keyword" binding:"omitempty,max=128"`
 	Page        int    `form:"page" binding:"omitempty,min=1"`
-	Size        int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size        int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type SupplementRequestReviewReq struct {
