@@ -350,9 +350,25 @@ func (s *WikiService) ReorderCategories(operatorID int64, ids []int64, ip net.IP
 	})
 }
 
-func (s *WikiService) ListDocs(q repo.WikiDocListQuery) ([]repo.WikiDocMeta, int64, error) {
-	fillPagination(&q.Page, &q.Size)
-	return s.repo.ListDocs(q)
+func (s *WikiService) ListDocs(q *repo.WikiDocListQuery) ([]repo.WikiDocMeta, int64, error) {
+	// 管理端目录树需要一次拉全量（req 上限 200）；勿用全局 fillPagination 的 50 硬顶，
+	// 否则 admin 侧 size=200 会静默截断，超出部分文档从树里消失。
+	fillWikiAdminPagination(&q.Page, &q.Size)
+	return s.repo.ListDocs(*q)
+}
+
+const wikiAdminListMaxSize = 200
+
+func fillWikiAdminPagination(page, size *int) {
+	if *page <= 0 {
+		*page = 1
+	}
+	if *size <= 0 {
+		*size = 50
+	}
+	if *size > wikiAdminListMaxSize {
+		*size = wikiAdminListMaxSize
+	}
 }
 
 func (s *WikiService) GetDocByID(id int64) (*model.WikiDocuments, error) {

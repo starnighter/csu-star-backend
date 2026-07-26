@@ -257,6 +257,10 @@ func (h *MiscHandler) CreateCorrection(c *gin.Context) {
 			resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "目标不存在")
 			return
 		}
+		if err == service.ErrSocialInvalidPayload {
+			resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "纠错字段或建议值无效")
+			return
+		}
 		failInternalWithLog(c, err)
 		return
 	}

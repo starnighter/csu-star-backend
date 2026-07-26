@@ -107,6 +107,9 @@ func (s *authInvitationRepositoryStub) ConsumeInvitation(code string, inviteeID 
 }
 
 func TestRegisterWithInviteCodeRewardsBothSides(t *testing.T) {
+	skipEmailCaptchaVerifiedCheck = true
+	t.Cleanup(func() { skipEmailCaptchaVerifiedCheck = false })
+
 	userRepo := &authUserRepositoryStub{
 		findUserByEmailErr: gorm.ErrRecordNotFound,
 	}
@@ -136,6 +139,9 @@ func TestRegisterWithInviteCodeRewardsBothSides(t *testing.T) {
 }
 
 func TestRegisterWithInvalidInviteCodeReturnsBusinessError(t *testing.T) {
+	skipEmailCaptchaVerifiedCheck = true
+	t.Cleanup(func() { skipEmailCaptchaVerifiedCheck = false })
+
 	userRepo := &authUserRepositoryStub{
 		findUserByEmailErr: gorm.ErrRecordNotFound,
 	}
@@ -146,6 +152,23 @@ func TestRegisterWithInvalidInviteCodeReturnsBusinessError(t *testing.T) {
 	err := service.Register("test@csu.edu.cn", "password123", "tester", "", "INV001")
 	if !errors.Is(err, &constant.InviteCodeNotExistErr) {
 		t.Fatalf("expected invite code error, got %v", err)
+	}
+}
+
+func TestRegisterRequiresEmailCaptchaVerified(t *testing.T) {
+	// 不跳过证明、也无 Redis 写入：必须拒绝直接注册
+	skipEmailCaptchaVerifiedCheck = false
+	userRepo := &authUserRepositoryStub{
+		findUserByEmailErr: gorm.ErrRecordNotFound,
+	}
+	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+	err := service.Register("newuser@qq.com", "password123", "tester", "", "")
+	if !errors.Is(err, &constant.EmailCaptchaRequiredErr) {
+		t.Fatalf("expected EmailCaptchaRequiredErr, got %v", err)
+	}
+	if userRepo.createdUser != nil {
+		t.Fatal("expected no user created without captcha proof")
 	}
 }
 

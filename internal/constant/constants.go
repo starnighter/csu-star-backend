@@ -13,6 +13,9 @@ const (
 	// 落在语义已变的旧 key 上。旧 key 10 分钟内自然过期。
 	CaptchaPrefix                = "captcha:v2:"
 	CaptchaRepeatPrefix          = "captcha:repeat:v2:"
+	// CaptchaVerifiedPrefix：/auth/email/verify 成功后写入，Register 消费。
+	// 防止前端两步流程里只调 register 跳过邮箱持有证明。
+	CaptchaVerifiedPrefix        = "captcha:verified:v2:"
 	RateLimitPrefix              = "ratelimit:"
 	AbusePrefix                  = "abuse:"
 	CacheRandomCoursesPrefix     = "random:courses:"
@@ -69,7 +72,8 @@ var (
 	OauthHasBeenBoundErr                = errs.BusinessErr{Code: 1022, Msg: "该第三方账号已绑定其他账号，请先使用原账号登录或先解绑"}
 	// 1023 曾是「未邮箱认证用户无法上传资源」，邮箱域名放开后该门槛已取消，
 	// 错误码保留不复用，避免与老客户端语义冲突。
-	InvalidEmailFormatErr = errs.BusinessErr{Code: 1024, Msg: "邮箱格式不正确，请检查后重试"}
+	InvalidEmailFormatErr      = errs.BusinessErr{Code: 1024, Msg: "邮箱格式不正确，请检查后重试"}
+	EmailCaptchaRequiredErr    = errs.BusinessErr{Code: 1025, Msg: "请先完成邮箱验证码校验"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

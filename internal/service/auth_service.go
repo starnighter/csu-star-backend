@@ -59,7 +59,15 @@ func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
 		}
-	case "forget_password":
+	case "bind_email":
+		// 绑定邮箱同样会写入账号，必须与 register 一样走域名策略；
+		// 否则 allow_list 下用户会先收到验证码，再在 BindEmail 时失败。
+		if !emailpolicy.DomainAllowed(emailpolicy.Domain(normalizedEmail)) {
+			return "", &constant.EmailDomainNotAllowedErr
+		}
+	case "forget_password", "reset_password":
+		// reset_password 与 forget_password 同义：都要求账号已存在，
+		// 避免对任意地址滥发验证码（发件通道滥用）。
 		userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
 		if errors.Is(err, gorm.ErrRecordNotFound) || userByEmail == nil {
 			return "", &constant.UserNotExistErr
@@ -120,6 +128,12 @@ func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
 	}
 
 	if result == captcha {
+		// 先写「已校验」证明再删验证码，供 Register 两步流程消费。
+		// 有效期比验证码本身更长，用户补全昵称/邀请码不至于过期。
+		verifiedKey := constant.CaptchaVerifiedPrefix + captchaID(normalizedEmail)
+		if err = utils.RDB.Set(utils.Ctx, verifiedKey, "1", captchaVerifiedTTL()).Err(); err != nil {
+			return err
+		}
 		if err = utils.RDB.Del(utils.Ctx, captchaKey).Err(); err != nil {
 			return err
 		}
@@ -129,9 +143,42 @@ func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
 	return &constant.CaptchaNotMatchErr
 }
 
+// skipEmailCaptchaVerifiedCheck 仅单测使用：现有 Register 单元测试不启 Redis。
+// 生产路径永远走 Redis 证明；切勿在业务代码里置 true。
+var skipEmailCaptchaVerifiedCheck bool
+
+func captchaVerifiedTTL() time.Duration {
+	return 30 * time.Minute
+}
+
+// consumeEmailCaptchaVerified 消费 /verify 写入的邮箱持有证明。
+// 成功则删除 key（一次性），失败表示未校验或已过期。
+func (s *AuthService) consumeEmailCaptchaVerified(normalizedEmail string) error {
+	if skipEmailCaptchaVerifiedCheck {
+		return nil
+	}
+	if utils.RDB == nil {
+		return &constant.EmailCaptchaRequiredErr
+	}
+	key := constant.CaptchaVerifiedPrefix + captchaID(normalizedEmail)
+	_, err := utils.RDB.GetDel(utils.Ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return &constant.EmailCaptchaRequiredErr
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode string) error {
 	normalizedEmail, err := emailpolicy.Check(email)
 	if err != nil {
+		return err
+	}
+
+	// 必须先经 /auth/email/verify；否则 allow_all 下可直接调 register 抢注任意邮箱。
+	if err := s.consumeEmailCaptchaVerified(normalizedEmail); err != nil {
 		return err
 	}
 

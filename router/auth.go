@@ -21,9 +21,10 @@ func SetupAuthRouter(r *gin.Engine, authHandler *handler.AuthHandler) {
 
 		emailGroup := g.Group("/email")
 		{
-			emailGroup.POST("/register", authHandler.Register)
+			// 注册与 captcha 同档限流：开放域名后防止批量抢注
+			emailGroup.POST("/register", middlewarepackage.IPBasedRateLimit("auth_register_ip", 10, 600), authHandler.Register)
 			emailGroup.POST("/captcha", middlewarepackage.IPBasedRateLimit("auth_captcha_ip", 10, 600), authHandler.SendCaptcha)
-			emailGroup.POST("/verify", authHandler.VerifyCaptcha)
+			emailGroup.POST("/verify", middlewarepackage.IPBasedRateLimit("auth_captcha_ip", 20, 600), authHandler.VerifyCaptcha)
 			emailGroup.POST("/login", middlewarepackage.IPBasedRateLimit("auth_login_ip", 30, 60), authHandler.Login)
 
 			emailAuthGroup := emailGroup.Group("")

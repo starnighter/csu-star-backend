@@ -5,6 +5,7 @@ import (
 	"csu-star-backend/internal/repo"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -256,16 +257,40 @@ func (s *MiscService) CreateReport(userID int64, targetType string, targetID int
 }
 
 func (s *MiscService) CreateCorrection(userID int64, targetType string, targetID int64, field, suggestedValue string) error {
-	ok, err := s.correctionTargetExists(model.CorrectionTargetType(targetType), targetID)
+	tt := model.CorrectionTargetType(targetType)
+	ok, err := s.correctionTargetExists(tt, targetID)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return ErrSocialTargetNotFound
 	}
+
+	field = strings.TrimSpace(field)
+	suggestedValue = strings.TrimSpace(suggestedValue)
+	if field == "" || suggestedValue == "" {
+		return ErrSocialInvalidPayload
+	}
+	// 与 applyCorrection / correctionCurrentValueSQL / 管理端字段字典同源白名单，
+	// 否则用户可提交 status 等垃圾字段，审核通过时才以「参数无效」失败。
+	allowed, knownType := model.CorrectionFieldsByTargetType[tt]
+	if !knownType {
+		return ErrSocialInvalidPayload
+	}
+	fieldOK := false
+	for _, name := range allowed {
+		if field == name {
+			fieldOK = true
+			break
+		}
+	}
+	if !fieldOK {
+		return ErrSocialInvalidPayload
+	}
+
 	return s.miscRepo.CreateCorrection(&model.Corrections{
 		UserID:         userID,
-		TargetType:     model.CorrectionTargetType(targetType),
+		TargetType:     tt,
 		TargetID:       targetID,
 		Field:          field,
 		SuggestedValue: suggestedValue,

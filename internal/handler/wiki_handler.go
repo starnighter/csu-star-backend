@@ -158,12 +158,13 @@ func (h *WikiHandler) ListDocs(c *gin.Context) {
 		}
 		query.CategoryID = &id
 	}
-	items, total, err := h.wikiSvc.ListDocs(query)
+	items, total, err := h.wikiSvc.ListDocs(&query)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	// 回显归一化后的 page/size，避免客户端按请求值误算总页数
+	resp.Success(c, gin.H{"items": items, "total": total, "page": query.Page, "size": query.Size})
 }
 
 func (h *WikiHandler) GetDocByID(c *gin.Context) {
@@ -325,6 +326,34 @@ func (h *WikiHandler) UploadImage(c *gin.Context) {
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if _, ok := wikiImageExtWhitelist[ext]; !ok {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "仅支持 png/jpg/gif/webp 图片")
+		return
+	}
+
+	// 扩展名可伪造；再用内容嗅探拒绝非图片，避免被当通用文件床。
+	src, err := file.Open()
+	if err != nil {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
+		return
+	}
+	mimeType, err := utils.DetectMimeType(src)
+	_ = src.Close()
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	allowedMIME := false
+	for _, allowed := range wikiImageExtWhitelist {
+		if mimeType == allowed {
+			allowedMIME = true
+			break
+		}
+	}
+	// http.DetectContentType 对 jpeg 常返回 image/jpeg；部分环境给 image/jpg
+	if mimeType == "image/jpg" {
+		allowedMIME = true
+	}
+	if !allowedMIME {
+		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "文件内容不是受支持的图片格式")
 		return
 	}
 

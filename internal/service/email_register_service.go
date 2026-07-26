@@ -129,15 +129,19 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 	return true, nil
 }
 
-// incrWithExpiry atomically increments a Redis key and sets expiry on first increment.
+// incrWithExpiry atomically increments a Redis key and sets expiry only on first hit.
+// 若每次 INCR 都刷新 TTL，被限流后的重试会把封禁窗口无限续命。
 func incrWithExpiry(key string, ttl time.Duration) (int64, error) {
-	pipe := utils.RDB.Pipeline()
-	incrCmd := pipe.Incr(utils.Ctx, key)
-	pipe.Expire(utils.Ctx, key, ttl)
-	if _, err := pipe.Exec(utils.Ctx); err != nil {
+	count, err := utils.RDB.Incr(utils.Ctx, key).Result()
+	if err != nil {
 		return 0, err
 	}
-	return incrCmd.Val(), nil
+	if count == 1 {
+		if err := utils.RDB.Expire(utils.Ctx, key, ttl).Err(); err != nil {
+			return 0, err
+		}
+	}
+	return count, nil
 }
 
 // validateEmailPassword checks the password meets all requirements.

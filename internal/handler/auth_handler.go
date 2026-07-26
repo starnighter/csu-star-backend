@@ -39,6 +39,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if handleEmailErr(c, err) {
 		return
 	}
+	if errors.Is(err, &constant.EmailCaptchaRequiredErr) {
+		resp.FailWithCode(c, http.StatusBadRequest, constant.EmailCaptchaRequiredErr.Code, constant.EmailCaptchaRequiredErr.Msg)
+		return
+	}
 	if errors.Is(err, &constant.InviteCodeNotExistErr) {
 		resp.FailWithCode(c, http.StatusBadRequest, constant.InviteCodeNotExistErr.Code, constant.InviteCodeNotExistErr.Msg)
 		return
