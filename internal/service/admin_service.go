@@ -399,7 +399,7 @@ func (s *AdminService) ReplyFeedback(feedbackID, operatorID int64, reply, status
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionUpdate,
 			TargetType: "feedback",
 			TargetID:   item.ID,
 			OldValues:  oldValues,
@@ -730,7 +730,7 @@ func (s *AdminService) SendUserNotification(userID, operatorID int64, title, con
 		}
 		return adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionCreate,
 			TargetType: "notification",
 			TargetID:   user.ID,
 			NewValues: mustJSON(map[string]interface{}{
@@ -751,7 +751,27 @@ func (s *AdminService) ListAnnouncements(page, size int) ([]repo.AdminAnnounceme
 	return s.adminRepo.ListAnnouncements(page, size)
 }
 
-func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announcements, ip net.IP) (*model.Announcements, error) {
+/*
+ * create / update 完成后统一回读列表用的 DTO 再返回。
+ *
+ * 此前直接返回事务里的 GORM model，与列表接口字段集不一致：
+ * teacher 的 bio/tutor_type/homepage_url 只在列表 DTO 里（从 metadata 拍平），
+ * 公告的 expires_at 在 create 时返回零值 "0001-01-01T00:00:00Z" 而列表里直接省略。
+ * 同一条记录在两个接口下长得不一样，前端要么写两套类型、要么被迫整表重载。
+ */
+func (s *AdminService) adminCourseItem(id int64) (*repo.AdminCourseItem, error) {
+	return s.adminRepo.GetAdminCourseItem(id)
+}
+
+func (s *AdminService) adminTeacherItem(id int64) (*repo.AdminTeacherItem, error) {
+	return s.adminRepo.GetAdminTeacherItem(id)
+}
+
+func (s *AdminService) adminAnnouncementItem(id int64) (*repo.AdminAnnouncementItem, error) {
+	return s.adminRepo.GetAdminAnnouncementItem(id)
+}
+
+func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announcements, ip net.IP) (*repo.AdminAnnouncementItem, error) {
 	if strings.TrimSpace(input.Title) == "" || strings.TrimSpace(input.Content) == "" {
 		return nil, ErrAdminInvalidPayload
 	}
@@ -761,7 +781,7 @@ func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announce
 	if input.PublishedAt.IsZero() {
 		input.PublishedAt = time.Now()
 	}
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Announcements, error) {
+	saved, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Announcements, error) {
 		if err := adminRepo.CreateAnnouncement(&input); err != nil {
 			return nil, err
 		}
@@ -772,7 +792,7 @@ func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announce
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionCreate,
 			TargetType: "announcement",
 			TargetID:   input.ID,
 			NewValues:  mustJSON(input),
@@ -783,13 +803,17 @@ func (s *AdminService) CreateAnnouncement(operatorID int64, input model.Announce
 		}
 		return &input, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.adminAnnouncementItem(saved.ID)
 }
 
-func (s *AdminService) UpdateAnnouncement(operatorID, id int64, updates map[string]interface{}, ip net.IP) (*model.Announcements, error) {
+func (s *AdminService) UpdateAnnouncement(operatorID, id int64, updates map[string]interface{}, ip net.IP) (*repo.AdminAnnouncementItem, error) {
 	if len(updates) == 0 {
 		return nil, ErrAdminInvalidPayload
 	}
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Announcements, error) {
+	saved, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Announcements, error) {
 		item, err := adminRepo.GetAnnouncementByID(id)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrAdminTargetNotFound
@@ -815,7 +839,7 @@ func (s *AdminService) UpdateAnnouncement(operatorID, id int64, updates map[stri
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionUpdate,
 			TargetType: "announcement",
 			TargetID:   item.ID,
 			OldValues:  oldValues,
@@ -827,6 +851,10 @@ func (s *AdminService) UpdateAnnouncement(operatorID, id int64, updates map[stri
 		}
 		return item, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.adminAnnouncementItem(saved.ID)
 }
 
 func (s *AdminService) DeleteAnnouncement(operatorID, id int64, ip net.IP) error {
@@ -858,18 +886,18 @@ func (s *AdminService) ListCourses(status, courseType, keyword string, page, siz
 	return s.adminRepo.ListCourses(status, courseType, keyword, page, size)
 }
 
-func (s *AdminService) CreateCourse(operatorID int64, course *model.Courses, ip net.IP) (*model.Courses, error) {
+func (s *AdminService) CreateCourse(operatorID int64, course *model.Courses, ip net.IP) (*repo.AdminCourseItem, error) {
 	if strings.TrimSpace(course.Name) == "" || course.CourseType == "" {
 		return nil, ErrAdminInvalidPayload
 	}
 	course.Status = model.CourseStatusActive
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Courses, error) {
+	saved, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, _ *gorm.DB) (*model.Courses, error) {
 		if err := adminRepo.CreateCourse(course); err != nil {
 			return nil, err
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionCreate,
 			TargetType: "course",
 			TargetID:   course.ID,
 			NewValues:  mustJSON(course),
@@ -880,9 +908,13 @@ func (s *AdminService) CreateCourse(operatorID int64, course *model.Courses, ip 
 		}
 		return course, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.adminCourseItem(saved.ID)
 }
 
-func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[string]interface{}, ip net.IP) (*model.Courses, error) {
+func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[string]interface{}, ip net.IP) (*repo.AdminCourseItem, error) {
 	if len(updates) == 0 {
 		return nil, ErrAdminInvalidPayload
 	}
@@ -905,7 +937,7 @@ func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[stri
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionUpdate,
 			TargetType: "course",
 			TargetID:   courseID,
 			OldValues:  oldValues,
@@ -917,10 +949,11 @@ func (s *AdminService) UpdateCourse(operatorID, courseID int64, updates map[stri
 		}
 		return item, nil
 	})
-	if err == nil {
-		utils.InvalidateCourseCache(courseID)
+	if err != nil {
+		return nil, err
 	}
-	return item, err
+	utils.InvalidateCourseCache(courseID)
+	return s.adminCourseItem(item.ID)
 }
 
 func (s *AdminService) DeleteCourse(operatorID, courseID int64, ip net.IP) error {
@@ -996,7 +1029,7 @@ func (s *AdminService) AddCourseRelation(operatorID, courseID, teacherID int64, 
 			}
 			if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 				OperatorID: operatorID,
-				Action:     model.AuditActionApprove,
+				Action:     model.AuditActionUpdate,
 				TargetType: "course_teacher_relation",
 				TargetID:   existing.ID,
 				OldValues:  oldValues,
@@ -1030,7 +1063,7 @@ func (s *AdminService) AddCourseRelation(operatorID, courseID, teacherID int64, 
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionCreate,
 			TargetType: "course_teacher_relation",
 			TargetID:   relation.ID,
 			NewValues:  mustJSON(relation),
@@ -1103,7 +1136,7 @@ func (s *AdminService) ListTeachers(status, keyword string, departmentID *int16,
 	return s.adminRepo.ListTeachers(status, keyword, departmentID, page, size)
 }
 
-func (s *AdminService) CreateTeacher(operatorID int64, teacher *model.Teachers, bio, tutorType, homepageURL string, ip net.IP) (*model.Teachers, error) {
+func (s *AdminService) CreateTeacher(operatorID int64, teacher *model.Teachers, bio, tutorType, homepageURL string, ip net.IP) (*repo.AdminTeacherItem, error) {
 	if strings.TrimSpace(teacher.Name) == "" || teacher.DepartmentID <= 0 || !s.departmentExists(s.db, teacher.DepartmentID) {
 		return nil, ErrAdminInvalidPayload
 	}
@@ -1117,7 +1150,7 @@ func (s *AdminService) CreateTeacher(operatorID int64, teacher *model.Teachers, 
 	}
 	teacher.Status = "active"
 	teacher.Metadata = metadata
-	return withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*model.Teachers, error) {
+	saved, err := withWriteTxValue(s, func(adminRepo repo.AdminRepository, _ repo.CourseRepository, tx *gorm.DB) (*model.Teachers, error) {
 		if !s.departmentExists(tx, teacher.DepartmentID) {
 			return nil, ErrAdminInvalidPayload
 		}
@@ -1126,7 +1159,7 @@ func (s *AdminService) CreateTeacher(operatorID int64, teacher *model.Teachers, 
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionCreate,
 			TargetType: "teacher",
 			TargetID:   teacher.ID,
 			NewValues:  mustJSON(teacher),
@@ -1137,9 +1170,13 @@ func (s *AdminService) CreateTeacher(operatorID int64, teacher *model.Teachers, 
 		}
 		return teacher, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return s.adminTeacherItem(saved.ID)
 }
 
-func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[string]interface{}, bio, tutorType, homepageURL *string, ip net.IP) (*model.Teachers, error) {
+func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[string]interface{}, bio, tutorType, homepageURL *string, ip net.IP) (*repo.AdminTeacherItem, error) {
 	if len(updates) == 0 && bio == nil && tutorType == nil && homepageURL == nil {
 		return nil, ErrAdminInvalidPayload
 	}
@@ -1176,7 +1213,7 @@ func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[st
 		}
 		if err := adminRepo.CreateAuditLog(&model.AuditLogs{
 			OperatorID: operatorID,
-			Action:     model.AuditActionApprove,
+			Action:     model.AuditActionUpdate,
 			TargetType: "teacher",
 			TargetID:   teacherID,
 			OldValues:  oldValues,
@@ -1188,10 +1225,11 @@ func (s *AdminService) UpdateTeacher(operatorID, teacherID int64, updates map[st
 		}
 		return item, nil
 	})
-	if err == nil {
-		utils.InvalidateTeacherCache(teacherID)
+	if err != nil {
+		return nil, err
 	}
-	return item, err
+	utils.InvalidateTeacherCache(teacherID)
+	return s.adminTeacherItem(item.ID)
 }
 
 func (s *AdminService) DeleteTeacher(operatorID, teacherID int64, ip net.IP) error {

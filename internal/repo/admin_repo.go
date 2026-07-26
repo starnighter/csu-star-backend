@@ -274,6 +274,9 @@ type AdminRepository interface {
 	AdjustUserPoints(userID int64, delta int, reason string) (int, error)
 	ListAnnouncements(page, size int) ([]AdminAnnouncementItem, int64, error)
 	CreateAnnouncement(item *model.Announcements) error
+	GetAdminAnnouncementItem(id int64) (*AdminAnnouncementItem, error)
+	GetAdminCourseItem(id int64) (*AdminCourseItem, error)
+	GetAdminTeacherItem(id int64) (*AdminTeacherItem, error)
 	GetAnnouncementByID(id int64) (*model.Announcements, error)
 	UpdateAnnouncement(item *model.Announcements) error
 	DeleteAnnouncement(id int64) error
@@ -642,7 +645,7 @@ func (r *adminRepository) ListAnnouncements(page, size int) ([]AdminAnnouncement
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select("id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at, deleted_at").
+	err := base.Select(adminAnnouncementItemColumns).
 		Order("is_pinned DESC").
 		Order("created_at DESC").
 		Offset((page - 1) * size).
@@ -687,7 +690,7 @@ func (r *adminRepository) ListCourses(status, courseType, keyword string, page, 
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select("id, name, course_type, description, credits, resource_count, eval_count, favorite_count, status, created_at, updated_at").
+	err := base.Select(adminCourseItemColumns).
 		Order("courses.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -747,21 +750,7 @@ func (r *adminRepository) ListTeachers(status, keyword string, departmentID *int
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select(`
-		teachers.id,
-		teachers.name,
-		teachers.title,
-		teachers.department_id,
-		COALESCE(departments.name, '') AS department_name,
-		teachers.avatar_url,
-		COALESCE(teachers.metadata->>'bio', '') AS bio,
-		COALESCE(teachers.metadata->>'tutor_type', '') AS tutor_type,
-		COALESCE(teachers.metadata->>'homepage_url', '') AS homepage_url,
-		teachers.favorite_count,
-		teachers.eval_count,
-		teachers.status,
-		teachers.created_at,
-		teachers.updated_at`).
+	err := base.Select(adminTeacherItemColumns).
 		Order("teachers.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -807,9 +796,14 @@ func (r *adminRepository) ListTeacherRelations(teacherID int64) ([]AdminTeacherR
 func (r *adminRepository) ListResources(status, keyword, resourceType string, courseID int64, page, size int) ([]AdminResourceItem, int64, error) {
 	var items []AdminResourceItem
 	var total int64
+	// 用 LEFT JOIN 而非 INNER JOIN 纯粹是防御性的：
+	// 当前 resources.course_id / uploader_id 都有外键约束，且课程与用户都是软删除，
+	// 所以孤儿资源不可能出现，两种写法结果一致（已在本地库核对过 190 == 190）。
+	// 但外键没有 ON DELETE 行为，一旦将来迁移改成级联删除，INNER JOIN 会让孤儿资源
+	// 同时从 items 和 total 中静默消失——管理员无从发现，也就无法清理。
 	base := r.db.Table("resources").
-		Joins("JOIN courses ON courses.id = resources.course_id").
-		Joins("JOIN users ON users.id = resources.uploader_id")
+		Joins("LEFT JOIN courses ON courses.id = resources.course_id").
+		Joins("LEFT JOIN users ON users.id = resources.uploader_id")
 	if status != "" {
 		base = base.Where("resources.status = ?", status)
 	}
@@ -830,9 +824,9 @@ func (r *adminRepository) ListResources(status, keyword, resourceType string, co
 		resources.id,
 		resources.title,
 		resources.course_id,
-		courses.name AS course_name,
+		COALESCE(courses.name, '') AS course_name,
 		resources.uploader_id,
-		users.nickname AS uploader_name,
+		COALESCE(users.nickname, '') AS uploader_name,
 		resources.type AS resource_type,
 		resources.status,
 		resources.download_count AS downloads,
@@ -973,6 +967,76 @@ func (r *adminRepository) CreateAuditLog(log *model.AuditLogs) error {
 
 func (r *adminRepository) CreateNotification(notification *model.Notifications) error {
 	return r.db.Create(notification).Error
+}
+
+/*
+ * 列表与「创建/更新后回读」共用同一套 SELECT。
+ *
+ * 此前 create/update 直接返回原始 GORM model，字段集与列表 DTO 不一致：
+ * teacher 的 bio/tutor_type/homepage_url 只在列表里有（从 metadata 拍平），
+ * course.code 只在 create/update 里有，公告的 expires_at 在 create 时还会返回
+ * 零值 "0001-01-01T00:00:00Z" 而列表里是直接省略——同一条记录两种表示。
+ */
+const adminCourseItemColumns = "id, name, course_type, description, credits, resource_count, eval_count, favorite_count, status, created_at, updated_at"
+
+const adminAnnouncementItemColumns = "id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at, deleted_at"
+
+const adminTeacherItemColumns = `
+		teachers.id,
+		teachers.name,
+		teachers.title,
+		teachers.department_id,
+		COALESCE(departments.name, '') AS department_name,
+		teachers.avatar_url,
+		COALESCE(teachers.metadata->>'bio', '') AS bio,
+		COALESCE(teachers.metadata->>'tutor_type', '') AS tutor_type,
+		COALESCE(teachers.metadata->>'homepage_url', '') AS homepage_url,
+		teachers.favorite_count,
+		teachers.eval_count,
+		teachers.status,
+		teachers.created_at,
+		teachers.updated_at`
+
+func (r *adminRepository) GetAdminCourseItem(id int64) (*AdminCourseItem, error) {
+	var item AdminCourseItem
+	err := r.db.Table("courses").Where("id = ?", id).Select(adminCourseItemColumns).Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
+}
+
+func (r *adminRepository) GetAdminTeacherItem(id int64) (*AdminTeacherItem, error) {
+	var item AdminTeacherItem
+	err := r.db.Table("teachers").
+		Joins("LEFT JOIN departments ON departments.id = teachers.department_id").
+		Where("teachers.id = ?", id).
+		Select(adminTeacherItemColumns).
+		Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
+}
+
+func (r *adminRepository) GetAdminAnnouncementItem(id int64) (*AdminAnnouncementItem, error) {
+	var item AdminAnnouncementItem
+	// Unscoped：软删除的公告也要能回读，否则删除后无法确认结果
+	err := r.db.Unscoped().Table("announcements").Where("id = ?", id).
+		Select(adminAnnouncementItemColumns).Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
 }
 
 func hydrateAdminUserBrief(target **UserBrief, id int64, nickname, avatarURL, role string) {
