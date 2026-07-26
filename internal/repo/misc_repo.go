@@ -20,6 +20,7 @@ var contributionDayLocation = loadContributionDayLocation()
 type MeProfile struct {
 	ID                int64          `json:"id,string"`
 	Email             string         `json:"email"`
+	StudentID         *string        `json:"student_id,omitempty"`
 	EmailVerified     bool           `json:"email_verified"`
 	Nickname          string         `json:"nickname"`
 	AvatarURL         string         `json:"avatar_url"`
@@ -192,6 +193,7 @@ func (r *miscRepository) GetMe(userID int64) (*MeProfile, error) {
 	err := r.db.Table("users").Select(`
 		id,
 		email,
+		student_id,
 		email_verified,
 		nickname,
 		avatar_url,

@@ -85,6 +85,9 @@ type JWTConfig struct {
 type SecurityConfig struct {
 	Mode                     string `mapstructure:"mode"`
 	ResourceRateLimitEnabled bool   `mapstructure:"resource_rate_limit_enabled"`
+	// SecretKey 用于加密落库的敏感配置（如管理端配置的 SMTP 密码）。
+	// 未配置时退回 jwt.secret。轮换它会导致已加密的值无法解密。
+	SecretKey string `mapstructure:"secret_key"`
 }
 
 type SnowflakeConfig struct {
@@ -109,9 +112,32 @@ type CosConfig struct {
 }
 
 type MailConfig struct {
+	Brand         MailBrandConfig        `mapstructure:"brand"`
+	Delivery      MailDeliveryConfig     `mapstructure:"delivery"`
+	AccountEmail  AccountEmailConfig     `mapstructure:"account_email"`
 	Verification  VerificationMailConfig `mapstructure:"verification"`
 	Imap          IMAPConfig             `mapstructure:"imap"`
 	EmailRegister EmailRegisterConfig    `mapstructure:"email_register"`
+}
+
+type MailBrandConfig struct {
+	AppName  string `mapstructure:"app_name"`
+	LoginURL string `mapstructure:"login_url"`
+}
+
+type MailDeliveryConfig struct {
+	PerTryTimeoutSec int `mapstructure:"per_try_timeout_sec"`
+	TotalBudgetSec   int `mapstructure:"total_budget_sec"`
+	MaxAttempts      int `mapstructure:"max_attempts"`
+}
+
+// AccountEmailConfig 控制哪些邮箱域名可以用于注册/绑定。
+// Policy 为 allow_all 时只校验邮箱格式；为 allow_list 时还需命中 AllowedDomains。
+// BlockedDomains 在任何 Policy 下都生效，且优先级高于 AllowedDomains。
+type AccountEmailConfig struct {
+	Policy         string   `mapstructure:"policy"`
+	AllowedDomains []string `mapstructure:"allowed_domains"`
+	BlockedDomains []string `mapstructure:"blocked_domains"`
 }
 
 type IMAPConfig struct {
@@ -122,17 +148,21 @@ type IMAPConfig struct {
 }
 
 type EmailRegisterConfig struct {
-	Enabled         bool   `mapstructure:"enabled"`
-	PollIntervalSec int    `mapstructure:"poll_interval_sec"`
-	IdleRefreshSec  int    `mapstructure:"idle_refresh_sec"`
-	AllowedSuffix   string `mapstructure:"allowed_suffix"`
-	MinPasswordLen  int    `mapstructure:"min_password_len"`
-	MaxPasswordLen  int    `mapstructure:"max_password_len"`
+	Enabled         bool `mapstructure:"enabled"`
+	PollIntervalSec int  `mapstructure:"poll_interval_sec"`
+	IdleRefreshSec  int  `mapstructure:"idle_refresh_sec"`
+	MinPasswordLen  int  `mapstructure:"min_password_len"`
+	MaxPasswordLen  int  `mapstructure:"max_password_len"`
+	// AllowedSenderDomains 是这条 IMAP 入站通道自己的发件人域名白名单，
+	// 刻意独立于 AccountEmailConfig：发件人只靠可伪造的 From 头认证，
+	// 绝不能跟着账号策略一起放开。
+	AllowedSenderDomains []string `mapstructure:"allowed_sender_domains"`
 }
 
 type VerificationMailConfig struct {
-	Subject   string       `mapstructure:"subject"`
-	Providers []SMTPConfig `mapstructure:"providers"`
+	Subject        string       `mapstructure:"subject"`
+	CodeTTLMinutes int          `mapstructure:"code_ttl_minutes"`
+	Providers      []SMTPConfig `mapstructure:"providers"`
 }
 
 type SMTPConfig struct {
@@ -143,6 +173,15 @@ type SMTPConfig struct {
 	Password      string `mapstructure:"password"`
 	FromEmailAddr string `mapstructure:"from_email_addr"`
 	FromName      string `mapstructure:"from_name"`
+	// Kind: aliyun_dm | tencent_ses | custom_smtp（默认）。
+	// 云厂商通道恒排在自填 SMTP 之前，与 Tier 无关；Tier 只在同一 Kind 内部排序。
+	Kind string `mapstructure:"kind"`
+	// Tier 越小越优先，同一 tier 内轮询；只有整个 tier 全部失败才降级到下一个 tier。
+	Tier int `mapstructure:"tier"`
+	// Disabled 用于停用通道但保留凭据。
+	Disabled bool `mapstructure:"disabled"`
+	// TLSMode: implicit(默认，465 隐式 TLS) | starttls(25/587)。
+	TLSMode string `mapstructure:"tls_mode"`
 }
 
 type OauthConfig struct {
@@ -175,11 +214,29 @@ type GoogleConfig struct {
 	RedirectUri  string `mapstructure:"redirect_uri"`
 }
 
+// setDefaults 把默认值写进 viper 的 default 层。ReloadConfig 只重读 config 层，
+// default 层是进程全局且跨 Unmarshal 保留的，所以这里只需在 Init 里调用一次，
+// SIGHUP 热重载后依然生效。
+func setDefaults() {
+	viper.SetDefault("security.resource_rate_limit_enabled", true)
+
+	viper.SetDefault("mail.account_email.policy", "allow_all")
+	viper.SetDefault("mail.brand.app_name", "CSU Star")
+	viper.SetDefault("mail.brand.login_url", "https://csustar.com/login/")
+	viper.SetDefault("mail.verification.code_ttl_minutes", 10)
+	viper.SetDefault("mail.delivery.per_try_timeout_sec", 10)
+	viper.SetDefault("mail.delivery.total_budget_sec", 20)
+	viper.SetDefault("mail.delivery.max_attempts", 3)
+
+	viper.SetDefault("mail.email_register.enabled", false)
+	viper.SetDefault("mail.email_register.allowed_sender_domains", []string{"csu.edu.cn"})
+}
+
 func Init() error {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	viper.SetDefault("security.resource_rate_limit_enabled", true)
+	setDefaults()
 
 	if err := viper.ReadInConfig(); err != nil {
 		logger.Log.Error("读取配置文件失败：", zap.Error(err))

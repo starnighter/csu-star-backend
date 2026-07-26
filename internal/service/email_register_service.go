@@ -9,9 +9,11 @@ import (
 
 	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/emailpolicy"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
+	"csu-star-backend/pkg/mailer"
 	"csu-star-backend/pkg/utils"
 
 	"go.uber.org/zap"
@@ -31,9 +33,18 @@ func NewEmailRegisterService(ur repo.UserRepository) *EmailRegisterService {
 // Returns (registered bool, err error).
 func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, body string) (bool, error) {
 	// 1. Normalize and validate sender
-	sender := strings.TrimSpace(strings.ToLower(senderEmail))
-	if !strings.HasSuffix(sender, constant.SchoolEmailSuffix) {
-		logger.Log.Info("忽略非校域邮箱", zap.String("sender", sender))
+	//
+	// 这里刻意用本通道自己的 allowed_sender_domains，而不是账号级的
+	// mail.account_email 策略：发件人只由可伪造的 From 头决定（IMAP 侧没有
+	// 任何 SPF/DKIM 校验），账号邮箱放开后若跟着放开，这条入站通道就会变成
+	// 一个公网可达、只靠伪造 From 就能开户的接口。
+	sender, err := emailpolicy.Normalize(senderEmail)
+	if err != nil {
+		logger.Log.Info("忽略无法解析的发件人", zap.String("sender", senderEmail))
+		return false, nil
+	}
+	if !emailpolicy.MatchAny(emailpolicy.Domain(sender), config.GetConfig().Mail.EmailRegister.AllowedSenderDomains) {
+		logger.Log.Info("忽略非白名单发件域", zap.String("sender", sender))
 		return false, nil
 	}
 
@@ -42,7 +53,7 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 
 	if password == "" {
 		logger.Log.Warn("邮件主题为空", zap.String("sender", sender))
-		if replyErr := utils.SendRegistrationEmptySubjectReplyEmail(sender); replyErr != nil {
+		if replyErr := mailer.SendRegistrationEmptySubjectReplyEmail(sender); replyErr != nil {
 			logger.Log.Error("发送校验失败回复邮件失败", zap.String("sender", sender), zap.Error(replyErr))
 		}
 		return false, nil
@@ -52,7 +63,7 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 	cfg := config.GetConfig().Mail.EmailRegister
 	if reason, ok := validateEmailPassword(password, cfg); !ok {
 		logger.Log.Warn("密码校验不通过", zap.String("sender", sender), zap.String("reason", reason))
-		if replyErr := utils.SendRegistrationInvalidPasswordReplyEmail(sender, reason, cfg.MinPasswordLen, cfg.MaxPasswordLen); replyErr != nil {
+		if replyErr := mailer.SendRegistrationInvalidPasswordReplyEmail(sender, reason, cfg.MinPasswordLen, cfg.MaxPasswordLen); replyErr != nil {
 			logger.Log.Error("发送密码校验失败回复邮件失败", zap.String("sender", sender), zap.Error(replyErr))
 		}
 		return false, nil
@@ -76,7 +87,7 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 	}
 	if existingUser != nil {
 		// Send "already exists" reply
-		if replyErr := utils.SendRegistrationReplyEmail(sender, false); replyErr != nil {
+		if replyErr := mailer.SendRegistrationReplyEmail(sender, false); replyErr != nil {
 			logger.Log.Error("发送'已注册'回复邮件失败", zap.String("sender", sender), zap.Error(replyErr))
 		}
 		return false, nil
@@ -110,7 +121,7 @@ func (s *EmailRegisterService) ProcessRegistrationEmail(senderEmail, subject, bo
 	logger.Log.Info("邮箱注册成功", zap.String("email", sender), zap.Int64("user_id", user.ID))
 
 	// 9. Send success reply
-	if replyErr := utils.SendRegistrationReplyEmail(sender, true); replyErr != nil {
+	if replyErr := mailer.SendRegistrationReplyEmail(sender, true); replyErr != nil {
 		logger.Log.Error("发送注册成功回复邮件失败", zap.String("sender", sender), zap.Error(replyErr))
 		// Don't return error -- user was already created successfully
 	}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/emailpolicy"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
@@ -425,7 +426,7 @@ func (s *AdminService) ListUserViolations(userID, page, size int64) ([]repo.Admi
 }
 
 func (s *AdminService) CreateUser(operatorID int64, email, password, nickname, avatarURL, role string, ip net.IP) (*repo.AdminUserItem, error) {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	normalizedEmail, err := emailpolicy.Check(email)
 	if err != nil {
 		return nil, ErrAdminInvalidPayload
 	}
@@ -527,7 +528,7 @@ func (s *AdminService) UpdateUser(userID, operatorID int64, email, password, nic
 	var normalizedEmail string
 	if email != "" {
 		var err error
-		normalizedEmail, err = normalizeSchoolEmail(email)
+		normalizedEmail, err = emailpolicy.Check(email)
 		if err != nil {
 			return nil, ErrAdminInvalidPayload
 		}
@@ -1567,6 +1568,7 @@ func buildAdminUserItem(user *model.Users) *repo.AdminUserItem {
 	return &repo.AdminUserItem{
 		ID:                user.ID,
 		Email:             user.Email,
+		StudentID:         user.StudentID,
 		Nickname:          user.Nickname,
 		AvatarURL:         user.AvatarUrl,
 		Role:              string(user.Role),

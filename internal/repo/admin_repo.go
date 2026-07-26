@@ -34,6 +34,7 @@ type AdminReportItem struct {
 	UserID          int64                     `json:"user_id,string"`
 	User            *UserBrief                `json:"user,omitempty" gorm:"-"`
 	TargetPreview   *AdminReportTargetPreview `json:"target_preview,omitempty" gorm:"-"`
+	Processor       *UserBrief                `json:"processor,omitempty" gorm:"-"`
 	TargetType      string                    `json:"target_type"`
 	TargetID        int64                     `json:"target_id,string"`
 	Reason          string                    `json:"reason"`
@@ -63,25 +64,34 @@ type AdminReportTargetPreview struct {
 }
 
 type AdminCorrectionItem struct {
-	ID              int64      `json:"id,string"`
-	UserID          int64      `json:"user_id,string"`
-	User            *UserBrief `json:"user,omitempty" gorm:"-"`
-	TargetType      string     `json:"target_type"`
-	TargetID        int64      `json:"target_id,string"`
-	Field           string     `json:"field"`
-	SuggestedValue  string     `json:"suggested_value"`
-	Status          string     `json:"status"`
-	ProcessorID     *int64     `json:"processor_id,omitempty,string"`
-	ProcessAt       *time.Time `json:"processed_at,omitempty"`
-	ProcessNote     string     `json:"process_note"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	UserNickname    string     `json:"-" gorm:"column:user_nickname"`
-	UserAvatarURL   string     `json:"-" gorm:"column:user_avatar_url"`
-	UserRole        string     `json:"-" gorm:"column:user_role"`
-	ProcessorName   string     `json:"-" gorm:"column:processor_name"`
-	ProcessorAvatar string     `json:"-" gorm:"column:processor_avatar"`
-	ProcessorRole   string     `json:"-" gorm:"column:processor_role"`
+	ID         int64      `json:"id,string"`
+	UserID     int64      `json:"user_id,string"`
+	User       *UserBrief `json:"user,omitempty" gorm:"-"`
+	Processor  *UserBrief `json:"processor,omitempty" gorm:"-"`
+	TargetType string     `json:"target_type"`
+	TargetID   int64      `json:"target_id,string"`
+	Field      string     `json:"field"`
+	// CurrentValue 是纠错目标当前的字段值，供审核员对比「改成什么」之前先看到「原本是什么」。
+	// 取值逻辑必须与 service.applyCourseCorrection / applyTeacherCorrection 的 field switch 保持一致。
+	CurrentValue string `json:"current_value"`
+	// CurrentValueDisplay / SuggestedValueDisplay 仅在字段本身是外键（当前只有 department_id）时非空，
+	// 用于把裸 ID 翻译成可读名称，否则审核员看到的是两个无意义的数字。
+	CurrentValueDisplay   string     `json:"current_value_display,omitempty"`
+	SuggestedValue        string     `json:"suggested_value"`
+	SuggestedValueDisplay string     `json:"suggested_value_display,omitempty"`
+	TargetMissing         bool       `json:"target_missing,omitempty"`
+	Status                string     `json:"status"`
+	ProcessorID           *int64     `json:"processor_id,omitempty,string"`
+	ProcessAt             *time.Time `json:"processed_at,omitempty"`
+	ProcessNote           string     `json:"process_note"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+	UserNickname          string     `json:"-" gorm:"column:user_nickname"`
+	UserAvatarURL         string     `json:"-" gorm:"column:user_avatar_url"`
+	UserRole              string     `json:"-" gorm:"column:user_role"`
+	ProcessorName         string     `json:"-" gorm:"column:processor_name"`
+	ProcessorAvatar       string     `json:"-" gorm:"column:processor_avatar"`
+	ProcessorRole         string     `json:"-" gorm:"column:processor_role"`
 }
 
 type AdminFeedbackItem struct {
@@ -107,6 +117,7 @@ type AdminFeedbackItem struct {
 type AdminUserItem struct {
 	ID                int64      `json:"id,string"`
 	Email             *string    `json:"email,omitempty"`
+	StudentID         *string    `json:"student_id,omitempty"`
 	Nickname          string     `json:"nickname"`
 	AvatarURL         string     `json:"avatar_url"`
 	Role              string     `json:"role"`
@@ -505,13 +516,13 @@ func (r *adminRepository) ListUsers(status, role, keyword string, page, size int
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		base = base.Where("users.nickname ILIKE ? OR COALESCE(users.email, '') ILIKE ?", like, like)
+		base = base.Where("users.nickname ILIKE ? OR COALESCE(users.email, '') ILIKE ? OR COALESCE(users.student_id, '') ILIKE ?", like, like, like)
 	}
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	err := base.
-		Select("id, email, nickname, avatar_url, role, status, ban_until, ban_reason, ban_source, violation_count, last_violation_at, email_verified, points, free_download_count, last_login_at, created_at, updated_at").
+		Select("id, email, student_id, nickname, avatar_url, role, status, ban_until, ban_reason, ban_source, violation_count, last_violation_at, email_verified, points, free_download_count, last_login_at, created_at, updated_at").
 		Order("users.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).

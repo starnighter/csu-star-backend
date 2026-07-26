@@ -36,8 +36,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	err := h.authSvc.Register(r.Email, r.Password, r.Nickname, r.AvatarUrl, r.InviteCode)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.InviteCodeNotExistErr) {
@@ -59,8 +58,7 @@ func (h *AuthHandler) SendCaptcha(c *gin.Context) {
 		return
 	}
 	msg, err := h.authSvc.SendCaptcha(r.Email, r.Purpose)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.SendCaptchaRepeatedlyIn60sErr) {
@@ -91,8 +89,7 @@ func (h *AuthHandler) VerifyCaptcha(c *gin.Context) {
 	}
 
 	err := h.authSvc.VerifyCaptcha(r.Email, r.Captcha)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.CaptchaNotMatchErr) {
@@ -115,8 +112,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	user, accessToken, refreshToken, err := h.authSvc.Login(r.Email, r.Password)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.UserNotExistErr) {
@@ -156,8 +152,7 @@ func (h *AuthHandler) BindEmail(c *gin.Context) {
 	}
 
 	err := h.authSvc.VerifyCaptcha(r.Email, r.Captcha)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.CaptchaNotMatchErr) {
@@ -170,8 +165,8 @@ func (h *AuthHandler) BindEmail(c *gin.Context) {
 	}
 	err = h.authSvc.BindEmail(userID, r.Email)
 	switch {
-	case errors.Is(err, &constant.InvalidSchoolEmailErr):
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	case errors.Is(err, &constant.EmailDomainNotAllowedErr), errors.Is(err, &constant.InvalidEmailFormatErr):
+		handleEmailErr(c, err)
 		return
 	case errors.Is(err, &constant.UserNotExistErr):
 		resp.FailWithCode(c, http.StatusBadRequest, constant.UserNotExistErr.Code, constant.UserNotExistErr.Msg)
@@ -330,8 +325,7 @@ func (h *AuthHandler) ForgetPwd(c *gin.Context) {
 	}
 
 	err := h.authSvc.ForgetPwd(r.Email, r.Captcha, r.Password)
-	if errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidSchoolEmailErr.Code, constant.InvalidSchoolEmailErr.Msg)
+	if handleEmailErr(c, err) {
 		return
 	}
 	if errors.Is(err, &constant.UserNotExistErr) {
@@ -348,6 +342,20 @@ func (h *AuthHandler) ForgetPwd(c *gin.Context) {
 	}
 
 	resp.SuccessMsg(c, "修改密码成功，请重新登录！")
+}
+
+// handleEmailErr 统一处理邮箱格式/域名策略类错误的 400 返回。
+// 已处理返回 true，调用方直接 return。
+func handleEmailErr(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, &constant.EmailDomainNotAllowedErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.EmailDomainNotAllowedErr.Code, constant.EmailDomainNotAllowedErr.Msg)
+	case errors.Is(err, &constant.InvalidEmailFormatErr):
+		resp.FailWithCode(c, http.StatusBadRequest, constant.InvalidEmailFormatErr.Code, constant.InvalidEmailFormatErr.Msg)
+	default:
+		return false
+	}
+	return true
 }
 
 func buildLoginResp(user *model.Users, accessToken, refreshToken string) (resp.LoginResp, error) {

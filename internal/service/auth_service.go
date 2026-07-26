@@ -2,14 +2,17 @@ package service
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
+	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/emailpolicy"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/logger"
+	"csu-star-backend/pkg/mailer"
 	"csu-star-backend/pkg/utils"
 	"encoding/hex"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -37,13 +40,18 @@ func (s *AuthService) SetMiscService(miscSvc *MiscService) {
 }
 
 func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	normalizedEmail, err := emailpolicy.Normalize(email)
 	if err != nil {
 		return "", err
 	}
 
 	switch purpose {
 	case "register":
+		// 只有会创建账号的路径才校验域名策略；登录/找回密码不校验，
+		// 否则将来收紧白名单会把存量用户锁在自己的数据外面。
+		if !emailpolicy.DomainAllowed(emailpolicy.Domain(normalizedEmail)) {
+			return "", &constant.EmailDomainNotAllowedErr
+		}
 		userByEmail, err := s.userRepo.FindUserByEmail(normalizedEmail)
 		if userByEmail != nil {
 			return "", &constant.UserHasRegisteredErr
@@ -62,8 +70,8 @@ func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) 
 	}
 
 	// 检查是否在60s内重复调用
-	stuNumber := GetStuNumberByEmail(normalizedEmail)
-	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaRepeatPrefix+stuNumber).Result()
+	id := captchaID(normalizedEmail)
+	result, err := utils.RDB.Get(utils.Ctx, constant.CaptchaRepeatPrefix+id).Result()
 	if errors.Is(err, redis.Nil) {
 		result = ""
 	} else if err != nil {
@@ -79,17 +87,17 @@ func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	err = utils.SendVerificationEmail(to, captcha)
+	err = mailer.SendVerificationEmail(to, captcha)
 	if err != nil {
 		return "", err
 	}
 
 	// 存入redis防止60s内重复访问并供后续校验
-	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaRepeatPrefix+stuNumber, captcha, 60*time.Second).Err(); err != nil {
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaRepeatPrefix+id, captcha, 60*time.Second).Err(); err != nil {
 		return "", err
 	}
-	// 存验证码，10min有效期
-	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+stuNumber, captcha, 600*time.Second).Err(); err != nil {
+	// 存验证码，有效期与邮件正文里写的分钟数同源
+	if err = utils.RDB.Set(utils.Ctx, constant.CaptchaPrefix+id, captcha, CaptchaTTL()).Err(); err != nil {
 		return "", err
 	}
 
@@ -97,13 +105,12 @@ func (s *AuthService) SendCaptcha(email string, purpose string) (string, error) 
 }
 
 func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	normalizedEmail, err := emailpolicy.Normalize(email)
 	if err != nil {
 		return err
 	}
 
-	stuNumber := GetStuNumberByEmail(normalizedEmail)
-	captchaKey := constant.CaptchaPrefix + stuNumber
+	captchaKey := constant.CaptchaPrefix + captchaID(normalizedEmail)
 	result, err := utils.RDB.Get(utils.Ctx, captchaKey).Result()
 	if errors.Is(err, redis.Nil) {
 		return &constant.CaptchaNotMatchErr
@@ -123,7 +130,7 @@ func (s *AuthService) VerifyCaptcha(email string, captcha string) error {
 }
 
 func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode string) error {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	normalizedEmail, err := emailpolicy.Check(email)
 	if err != nil {
 		return err
 	}
@@ -202,7 +209,8 @@ func (s *AuthService) Register(email, password, nickName, avatarUrl, inviteCode 
 }
 
 func (s *AuthService) Login(email, password string) (*model.Users, string, string, error) {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	// 登录只做格式规范化，不查域名策略：收紧白名单不应影响存量用户登录。
+	normalizedEmail, err := emailpolicy.Normalize(email)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -237,7 +245,7 @@ func (s *AuthService) Login(email, password string) (*model.Users, string, strin
 }
 
 func (s *AuthService) BindEmail(userID int64, email string) error {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	normalizedEmail, err := emailpolicy.Check(email)
 	if err != nil {
 		return err
 	}
@@ -323,7 +331,8 @@ func (s *AuthService) Logout(tokenHash string) error {
 }
 
 func (s *AuthService) ForgetPwd(email, captcha, password string) error {
-	normalizedEmail, err := normalizeSchoolEmail(email)
+	// 同 Login：找回密码不查域名策略，否则用户可能连自己的账号都取不回。
+	normalizedEmail, err := emailpolicy.Normalize(email)
 	if err != nil {
 		return err
 	}
@@ -348,15 +357,26 @@ func (s *AuthService) ForgetPwd(email, captcha, password string) error {
 	return s.userRepo.UpdatePasswordByID(user.ID, hash)
 }
 
-func GetStuNumberByEmail(email string) string {
-	normalized := strings.TrimSpace(strings.ToLower(email))
-	return strings.TrimSuffix(normalized, constant.SchoolEmailSuffix)
+// captchaID 从已规范化的邮箱派生定长、非 PII 的 Redis key 片段。
+//
+// 取代旧的「学号」方案（邮箱去掉 @csu.edu.cn）：域名放开后那个方案会退化——
+// 非校园邮箱不匹配后缀，TrimSuffix 原样返回完整邮箱，key 变得长度不定、
+// 含分隔符，且 12345@qq.com 与 12345@csu.edu.cn 的行为不一致。
+func captchaID(normalizedEmail string) string {
+	sum := sha256.Sum256([]byte(normalizedEmail))
+	return hex.EncodeToString(sum[:16])
 }
 
-func normalizeSchoolEmail(email string) (string, error) {
-	normalized := strings.TrimSpace(strings.ToLower(email))
-	if !strings.HasSuffix(normalized, constant.SchoolEmailSuffix) {
-		return "", &constant.InvalidSchoolEmailErr
+// CaptchaTTL 是验证码在 Redis 里的有效期，与验证码邮件正文里写的分钟数同源，
+// 避免两边各写各的再次漂移（历史上邮件写 5 分钟、实际存 10 分钟）。
+func CaptchaTTL() time.Duration {
+	const fallback = 10 * time.Minute
+	cfg := config.GetConfig()
+	if cfg == nil {
+		return fallback
 	}
-	return normalized, nil
+	if minutes := cfg.Mail.Verification.CodeTTLMinutes; minutes > 0 {
+		return time.Duration(minutes) * time.Minute
+	}
+	return fallback
 }

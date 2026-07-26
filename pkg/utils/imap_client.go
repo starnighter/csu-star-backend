@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"csu-star-backend/pkg/mailer"
 	"fmt"
 	"io"
 	"mime"
@@ -15,11 +16,11 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap"
-	"github.com/emersion/go-imap/client"
 	idle "github.com/emersion/go-imap-idle"
+	"github.com/emersion/go-imap/client"
 )
 
-const replyHeaderKey = "X-CSU-Star-Reply"
+const replyHeaderKey = mailer.ReplyHeaderKey
 
 type ImapClient struct {
 	client *client.Client

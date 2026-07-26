@@ -12,7 +12,7 @@ func TestSetUpAdminRouterDoesNotRegisterResourceRestore(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	SetUpAdminRouter(r, &handler.AdminHandler{})
+	SetUpAdminRouter(r, &handler.AdminHandler{}, &handler.MailProviderHandler{})
 
 	for _, route := range r.Routes() {
 		if route.Method == http.MethodPost && route.Path == "/admin/resources/:id/restore" {

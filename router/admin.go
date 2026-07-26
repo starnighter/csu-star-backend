@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler) {
+func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler, mailHandler *handler.MailProviderHandler) {
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(
 		middlewarepackage.JWTAuth(),
@@ -31,6 +31,16 @@ func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler) {
 		adminGroup.GET("/teachers/:id/relations", adminHandler.ListTeacherRelations)
 		adminGroup.GET("/resources", adminHandler.ListResources)
 		adminGroup.GET("/audit-logs", adminHandler.ListAuditLogs)
+
+		// 邮件通道配置：仅 admin。凭据字段不对 auditor 暴露，密码也永不回传明文。
+		mailGroup := adminGroup.Group("/mail-providers", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)))
+		{
+			mailGroup.GET("", mailHandler.List)
+			mailGroup.POST("", mailHandler.Create)
+			mailGroup.PUT("/:id", mailHandler.Update)
+			mailGroup.DELETE("/:id", mailHandler.Delete)
+			mailGroup.POST("/:id/test", mailHandler.SendTest)
+		}
 
 		adminGroup.POST("/users", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.CreateUser)
 		adminGroup.PUT("/users/:id", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)), adminHandler.UpdateUser)
