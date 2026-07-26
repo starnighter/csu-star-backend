@@ -31,6 +31,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	miscRepo := repo.NewMiscRepository(db)
 	adminRepo := repo.NewAdminRepository(db)
 	mailProviderRepo := repo.NewMailProviderRepository(db)
+	wikiRepo := repo.NewWikiRepository(db)
 
 	// 初始化service
 	securitySvc := service.NewSecurityService(db)
@@ -52,6 +53,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	courseSvc.SetMiscService(miscSvc)
 	authSvc.SetMiscService(miscSvc)
 	mailProviderSvc := service.NewMailProviderService(mailProviderRepo)
+	wikiSvc := service.NewWikiService(db, wikiRepo)
 	// 注册后发信通道优先取数据库里管理端配置的，本表为空时回落到 config.yaml
 	mailProviderSvc.Install()
 	middlewarepackage.InitSecurityService(securitySvc)
@@ -68,6 +70,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	miscHandler := handler.NewMiscHandler(miscSvc)
 	adminHandler := handler.NewAdminHandler(adminSvc)
 	mailProviderHandler := handler.NewMailProviderHandler(mailProviderSvc)
+	wikiHandler := handler.NewWikiHandler(wikiSvc)
 
 	SetupAuthRouter(r, authHandler)
 	SetUpDeptRouter(r, departmentHandler)
@@ -78,7 +81,8 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	SetUpCommentRouter(r, commentHandler)
 	SetUpSocialRouter(r, socialHandler)
 	SetUpMiscRouter(r, miscHandler)
-	SetUpAdminRouter(r, adminHandler, mailProviderHandler)
+	SetUpWikiRouter(r, wikiHandler)
+	SetUpAdminRouter(r, adminHandler, mailProviderHandler, wikiHandler)
 
 	return r, nil
 }

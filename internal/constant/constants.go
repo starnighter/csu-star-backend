@@ -24,6 +24,7 @@ const (
 	TencentCosAvatarsKeyPrefix          = "avatars/"
 	TencentCosResourcesKeyPrefix        = "resources/"
 	TencentCosPendingResourcesKeyPrefix = "resources/pending/"
+	TencentCosWikiImagesKeyPrefix       = "wiki/images/"
 
 	// 其他常量
 	GinUserID          = "user_id"

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler, mailHandler *handler.MailProviderHandler) {
+func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler, mailHandler *handler.MailProviderHandler, wikiHandler *handler.WikiHandler) {
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(
 		middlewarepackage.JWTAuth(),
@@ -31,6 +31,29 @@ func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler, mailHan
 		adminGroup.GET("/teachers/:id/relations", adminHandler.ListTeacherRelations)
 		adminGroup.GET("/resources", adminHandler.ListResources)
 		adminGroup.GET("/audit-logs", adminHandler.ListAuditLogs)
+
+		// Wiki 文档管理:读对 admin/auditor 开放,写仅 admin。
+		wikiGroup := adminGroup.Group("/wiki")
+		{
+			wikiGroup.GET("/categories", wikiHandler.ListCategories)
+			wikiGroup.GET("/docs", wikiHandler.ListDocs)
+			wikiGroup.GET("/docs/:id", wikiHandler.GetDocByID)
+
+			wikiWriteGroup := wikiGroup.Group("", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)))
+			{
+				wikiWriteGroup.POST("/categories", wikiHandler.CreateCategory)
+				wikiWriteGroup.PUT("/categories/:id", wikiHandler.UpdateCategory)
+				wikiWriteGroup.DELETE("/categories/:id", wikiHandler.DeleteCategory)
+				wikiWriteGroup.POST("/categories/reorder", wikiHandler.ReorderCategories)
+				wikiWriteGroup.POST("/docs", wikiHandler.CreateDoc)
+				wikiWriteGroup.PUT("/docs/:id", wikiHandler.UpdateDoc)
+				wikiWriteGroup.POST("/docs/:id/publish", wikiHandler.PublishDoc)
+				wikiWriteGroup.POST("/docs/:id/unpublish", wikiHandler.UnpublishDoc)
+				wikiWriteGroup.POST("/docs/reorder", wikiHandler.ReorderDocs)
+				wikiWriteGroup.DELETE("/docs/:id", wikiHandler.DeleteDoc)
+				wikiWriteGroup.POST("/images", wikiHandler.UploadImage)
+			}
+		}
 
 		// 邮件通道配置：仅 admin。凭据字段不对 auditor 暴露，密码也永不回传明文。
 		mailGroup := adminGroup.Group("/mail-providers", middlewarepackage.RequireRoles(string(model.UserRoleAdmin)))
