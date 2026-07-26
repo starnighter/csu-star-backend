@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"encoding/json"
 	"errors"
 	"time"
@@ -160,7 +161,7 @@ func (r *commentRepository) CreateComment(comment *model.Comments) error {
 }
 
 func (r *commentRepository) CreateCommentWithEffects(comment *model.Comments, notification *model.Notifications) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(comment).Error; err != nil {
 			return err
 		}
@@ -186,6 +187,10 @@ func (r *commentRepository) CreateCommentWithEffects(comment *model.Comments, no
 		}
 		return nil
 	})
+	if err == nil && notification != nil && notification.ID != 0 {
+		realtime.PublishNewNotification(notification)
+	}
+	return err
 }
 
 func (r *commentRepository) GetCommentByID(id int64) (*model.Comments, error) {

@@ -3,6 +3,7 @@ package router
 import (
 	"csu-star-backend/internal/handler"
 	middlewarepackage "csu-star-backend/internal/middleware"
+	"csu-star-backend/internal/realtime"
 	"csu-star-backend/internal/repo"
 	"csu-star-backend/internal/service"
 	"fmt"
@@ -58,6 +59,12 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	mailProviderSvc.Install()
 	middlewarepackage.InitSecurityService(securitySvc)
 
+	// 实时通知 Hub（进程内；多实例时再加 Redis Pub/Sub）
+	wsHub := realtime.Default()
+	if wsHub == nil {
+		wsHub = realtime.Init()
+	}
+
 	// 初始化handler
 	authHandler := handler.NewAuthHandler(authSvc, oauthSvc)
 	departmentHandler := handler.NewDepartmentHandler(departmentSvc)
@@ -71,6 +78,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	adminHandler := handler.NewAdminHandler(adminSvc)
 	mailProviderHandler := handler.NewMailProviderHandler(mailProviderSvc)
 	wikiHandler := handler.NewWikiHandler(wikiSvc)
+	wsHandler := handler.NewWSHandler(miscSvc, wsHub)
 
 	SetupAuthRouter(r, authHandler)
 	SetUpDeptRouter(r, departmentHandler)
@@ -83,6 +91,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	SetUpMiscRouter(r, miscHandler)
 	SetUpWikiRouter(r, wikiHandler)
 	SetUpAdminRouter(r, adminHandler, mailProviderHandler, wikiHandler)
+	SetUpWSRouter(r, wsHandler)
 
 	return r, nil
 }

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -283,6 +284,7 @@ func (r *miscRepository) UpdateMe(userID int64, nickname, avatarURL string, depa
 
 func (r *miscRepository) DailyCheckin(userID int64) (int, error) {
 	var balance int
+	var createdNotification *model.Notifications
 	dayStart := startOfContributionDay(time.Now())
 	dayEnd := dayStart.AddDate(0, 0, 1)
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -334,7 +336,7 @@ func (r *miscRepository) DailyCheckin(userID int64) (int, error) {
 			return err
 		}
 
-		return tx.Create(&model.Notifications{
+		notification := &model.Notifications{
 			UserID:    userID,
 			Type:      model.NotificationPointsChanged,
 			Category:  model.NotificationCategoryPoints,
@@ -344,8 +346,16 @@ func (r *miscRepository) DailyCheckin(userID int64) (int, error) {
 			RelatedID: 0,
 			IsRead:    true,
 			IsGlobal:  false,
-		}).Error
+		}
+		if err := tx.Create(notification).Error; err != nil {
+			return err
+		}
+		createdNotification = notification
+		return nil
 	})
+	if err == nil && createdNotification != nil {
+		realtime.PublishNewNotification(createdNotification)
+	}
 	return balance, err
 }
 
@@ -1140,7 +1150,11 @@ func (r *miscRepository) MarkAllNotificationsRead(userID int64) error {
 }
 
 func (r *miscRepository) CreateNotification(notification *model.Notifications) error {
-	return r.db.Create(notification).Error
+	if err := r.db.Create(notification).Error; err != nil {
+		return err
+	}
+	realtime.PublishNewNotification(notification)
+	return nil
 }
 
 func (r *miscRepository) PurgeExpiredNotifications(now time.Time) error {

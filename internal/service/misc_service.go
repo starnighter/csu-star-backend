@@ -2,6 +2,7 @@ package service
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"csu-star-backend/internal/repo"
 	"encoding/json"
 	"errors"
@@ -324,11 +325,23 @@ func (s *MiscService) CountUnreadNotifications(userID int64) (int64, error) {
 }
 
 func (s *MiscService) MarkNotificationRead(userID, notificationID int64) error {
-	return s.miscRepo.MarkNotificationRead(userID, notificationID)
+	if err := s.miscRepo.MarkNotificationRead(userID, notificationID); err != nil {
+		return err
+	}
+	realtime.PublishRead(userID, notificationID)
+	if count, err := s.miscRepo.CountUnreadNotifications(userID); err == nil {
+		realtime.PublishUnreadCount(userID, count)
+	}
+	return nil
 }
 
 func (s *MiscService) MarkAllNotificationsRead(userID int64) error {
-	return s.miscRepo.MarkAllNotificationsRead(userID)
+	if err := s.miscRepo.MarkAllNotificationsRead(userID); err != nil {
+		return err
+	}
+	realtime.PublishReadAll(userID)
+	realtime.PublishUnreadCount(userID, 0)
+	return nil
 }
 
 func (s *MiscService) reportTargetExists(targetType model.ReportTargetType, targetID int64) (bool, error) {

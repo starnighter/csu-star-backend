@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"encoding/json"
 	"strings"
 	"time"
@@ -966,7 +967,11 @@ func (r *adminRepository) CreateAuditLog(log *model.AuditLogs) error {
 }
 
 func (r *adminRepository) CreateNotification(notification *model.Notifications) error {
-	return r.db.Create(notification).Error
+	if err := r.db.Create(notification).Error; err != nil {
+		return err
+	}
+	realtime.PublishNewNotification(notification)
+	return nil
 }
 
 /*
