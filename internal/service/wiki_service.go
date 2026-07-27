@@ -52,15 +52,18 @@ type WikiTreeDoc struct {
 }
 
 type WikiTreeCategory struct {
-	ID   int64         `json:"id,string"`
-	Name string        `json:"name"`
-	Docs []WikiTreeDoc `json:"docs"`
+	ID       int64         `json:"id,string"`
+	Name     string        `json:"name"`
+	DocCount int           `json:"doc_count"`
+	Docs     []WikiTreeDoc `json:"docs"`
 }
 
 type WikiTreeSection struct {
 	Section         string             `json:"section"`
 	Title           string             `json:"title"`
 	AllowCategories bool               `json:"allow_categories"`
+	DocCount        int                `json:"doc_count"`
+	CategoryCount   int                `json:"category_count"`
 	Docs            []WikiTreeDoc      `json:"docs"`
 	Categories      []WikiTreeCategory `json:"categories"`
 }
@@ -165,7 +168,23 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 		if !ok || !sec.AllowCategories {
 			continue
 		}
-		sec.Categories = append(sec.Categories, WikiTreeCategory{ID: c.ID, Name: c.Name, Docs: docsByCategory[c.ID]})
+		catDocs := docsByCategory[c.ID]
+		sec.Categories = append(sec.Categories, WikiTreeCategory{
+			ID:       c.ID,
+			Name:     c.Name,
+			DocCount: len(catDocs),
+			Docs:     catDocs,
+		})
+	}
+
+	for i := range sections {
+		sec := &sections[i]
+		catDocs := 0
+		for _, cat := range sec.Categories {
+			catDocs += cat.DocCount
+		}
+		sec.CategoryCount = len(sec.Categories)
+		sec.DocCount = len(sec.Docs) + catDocs
 	}
 
 	return &WikiTree{Sections: sections}, nil
