@@ -15,7 +15,7 @@ import (
 var ErrMeNotFound = errors.New("me not found")
 var ErrAlreadyCheckedIn = errors.New("already checked in")
 
-const contributionWeeks = 26
+const contributionWeeks = 52
 
 var contributionLocation = loadContributionLocation()
 
