@@ -204,12 +204,31 @@ func (s *MemoryStore) GetPage(id int64) (*model.CompassPage, error) {
 func (s *MemoryStore) UpdatePage(page *model.CompassPage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.pages[page.ID]; !ok {
+	existing, ok := s.pages[page.ID]
+	if !ok {
 		return ErrNotFound
+	}
+	// Preserve counters that are only mutated via dedicated atomic helpers
+	// when callers pass a stale snapshot (e.g. concurrent IncrementViewCount).
+	page.ViewCount = existing.ViewCount
+	if page.CommentCount < existing.CommentCount {
+		page.CommentCount = existing.CommentCount
 	}
 	page.UpdatedAt = time.Now()
 	page.HotScore = computeHot(page.ViewCount, page.CommentCount, page.EditCount, page.FavoriteCount)
 	s.pages[page.ID] = clonePage(page)
+	return nil
+}
+
+func (s *MemoryStore) IncrementViewCount(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.pages[id]
+	if !ok {
+		return ErrNotFound
+	}
+	p.ViewCount++
+	p.HotScore = computeHot(p.ViewCount, p.CommentCount, p.EditCount, p.FavoriteCount)
 	return nil
 }
 

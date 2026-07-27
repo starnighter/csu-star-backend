@@ -109,8 +109,27 @@ func (s *GormStore) GetPage(id int64) (*model.CompassPage, error) {
 }
 
 func (s *GormStore) UpdatePage(page *model.CompassPage) error {
+	// Never overwrite view_count via full Save — views use IncrementViewCount.
+	// Update content fields only so concurrent GetPage view bumps cannot clobber body.
 	page.HotScore = computeHot(page.ViewCount, page.CommentCount, page.EditCount, page.FavoriteCount)
-	return s.db.Save(page).Error
+	return s.db.Model(&model.CompassPage{}).Where("id = ?", page.ID).Updates(map[string]any{
+		"title":         page.Title,
+		"body":          page.Body,
+		"parent_id":     page.ParentID,
+		"collection_id": page.CollectionID,
+		"course_id":     page.CourseID,
+		"content_type":  page.ContentType,
+		"space_key":     page.SpaceKey,
+		"sort_order":    page.SortOrder,
+		"edit_count":    page.EditCount,
+		"hot_score":     page.HotScore,
+		"updated_at":    time.Now(),
+	}).Error
+}
+
+func (s *GormStore) IncrementViewCount(id int64) error {
+	return s.db.Model(&model.CompassPage{}).Where("id = ?", id).
+		UpdateColumn("view_count", gorm.Expr("view_count + 1")).Error
 }
 
 func (s *GormStore) ListPagesBySpace(spaceKey string) ([]model.CompassPage, error) {

@@ -253,3 +253,75 @@ func idString(v any) string {
 		return ""
 	}
 }
+
+func TestParseOptionalJSONInt64SnowflakeString(t *testing.T) {
+	// > 2^53-1 — would lose precision if coerced via float64/Number in JS.
+	const snowflake = "2081794825308340224"
+	id, err := parseOptionalJSONInt64(json.RawMessage(`"` + snowflake + `"`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == nil || *id != 2081794825308340224 {
+		t.Fatalf("want exact snowflake, got %v", id)
+	}
+	// JSON number form still works for smaller IDs
+	id2, err := parseOptionalJSONInt64(json.RawMessage(`42`))
+	if err != nil || id2 == nil || *id2 != 42 {
+		t.Fatalf("number form: %v %v", id2, err)
+	}
+	id3, err := parseOptionalJSONInt64(json.RawMessage(`null`))
+	if err != nil || id3 != nil {
+		t.Fatalf("null form: %v %v", id3, err)
+	}
+}
+
+func TestCompassHandlerCreateEssayAcceptsSnowflakeStringIDs(t *testing.T) {
+	store := docengine.NewMemoryStore()
+	h := NewCompassHandler(service.NewCompassService(store))
+	r := setupCompassRouter(h)
+
+	const author int64 = 11
+	const admin int64 = 1
+	w := doJSON(r, http.MethodPost, "/compass/author/apply", author, "user", map[string]any{"reason": "x"})
+	appID := idString(decodeData(t, w)["data"].(map[string]any)["id"])
+	_ = doJSON(r, http.MethodPost, "/compass/author/applications/"+appID+"/review", admin, "admin",
+		map[string]any{"approve": true})
+
+	// Pre-seed a collection page with a large snowflake-like id by creating via API then
+	// posting essay with collection_id as string (the app client path).
+	w = doJSON(r, http.MethodPost, "/compass/collections", author, "user", map[string]any{
+		"title": "snow col", "description": "d",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("create col: %d %s", w.Code, w.Body.String())
+	}
+	col := decodeData(t, w)["data"].(map[string]any)["collection"].(map[string]any)
+	colID := idString(col["id"])
+	if colID == "" {
+		t.Fatalf("missing collection id: %+v", col)
+	}
+
+	// Send collection_id as JSON string (not number) — mirrors createCompassEssay after fix.
+	w = doJSON(r, http.MethodPost, "/compass/essays", author, "user", map[string]any{
+		"title":         "under col",
+		"body":          "child",
+		"collection_id": colID, // string in JSON
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("create essay under collection with string id: %d %s", w.Code, w.Body.String())
+	}
+	page := decodeData(t, w)["data"].(map[string]any)
+	parent := idString(page["parent_id"])
+	rootID := idString(col["root_page_id"])
+	if parent == "" || parent != rootID {
+		t.Fatalf("parent_id want root %s got %s (page=%+v)", rootID, parent, page)
+	}
+}
+
+func TestParseOptionalJSONInt64RejectsLossyFloatString(t *testing.T) {
+	// Ensure we don't silently accept non-integer tokens
+	_, err := parseOptionalJSONInt64(json.RawMessage(`"12.5"`))
+	if err == nil {
+		t.Fatal("expected error for non-integer")
+	}
+}

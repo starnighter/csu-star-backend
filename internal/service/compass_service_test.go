@@ -326,3 +326,68 @@ func TestHistoryAfterPermittedWrite(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// Concurrent GetPage view bumps must not overwrite body written by UpdatePage.
+func TestGetPageViewBumpDoesNotClobberBodyUnderConcurrentWrites(t *testing.T) {
+	svc := newTestCompass()
+	const uid int64 = 77
+	app, _ := svc.ApplyAuthor(uid, "a")
+	_, _ = svc.ReviewAuthorApplication(1, string(model.UserRoleAdmin), app.ID, true, "")
+	page, err := svc.CreateEssay(uid, CreateEssayInput{Title: "race", Body: "written-0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	// flood GetPage (view increments)
+	go func() {
+		for i := 0; i < 80; i++ {
+			_, _, _ = svc.GetPage(uid, page.ID)
+		}
+		close(done)
+	}()
+
+	var lastBody string
+	for i := 0; i < 20; i++ {
+		lastBody = "written-" + itoa(i)
+		_, err := svc.UpdatePage(uid, string(model.UserRoleUser), page.ID, nil, &lastBody)
+		if err != nil {
+			t.Fatalf("update %d: %v", i, err)
+		}
+	}
+	<-done
+
+	// Read without relying on GetPage view side effects for body check:
+	// one final GetPage after writers finish.
+	got, _, err := svc.GetPage(uid, page.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Body != lastBody {
+		t.Fatalf("body clobbered by view bumps: want %q got %q", lastBody, got.Body)
+	}
+	hist, err := svc.ListHistory(uid, page.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) == 0 || hist[0].Body != lastBody {
+		t.Fatalf("latest history body want %q, hist0=%+v", lastBody, hist[0])
+	}
+	if got.Body != hist[0].Body {
+		t.Fatalf("current body %q != latest history %q", got.Body, hist[0].Body)
+	}
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var b [16]byte
+	pos := len(b)
+	for i > 0 {
+		pos--
+		b[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(b[pos:])
+}

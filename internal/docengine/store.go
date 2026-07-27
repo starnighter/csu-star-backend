@@ -46,6 +46,8 @@ type Store interface {
 	CreatePage(page *model.CompassPage) error
 	GetPage(id int64) (*model.CompassPage, error)
 	UpdatePage(page *model.CompassPage) error
+	// IncrementViewCount atomically bumps view_count only (never full-row Save).
+	IncrementViewCount(id int64) error
 	ListPagesBySpace(spaceKey string) ([]model.CompassPage, error)
 	ListChildPages(parentID int64) ([]model.CompassPage, error)
 	AppendHistory(h *model.CompassPageHistory) error

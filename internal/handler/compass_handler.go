@@ -3,9 +3,11 @@ package handler
 import (
 	"csu-star-backend/internal/constant"
 	"csu-star-backend/internal/service"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -173,23 +175,39 @@ func (h *CompassHandler) GetTree(c *gin.Context) {
 
 // POST /compass/essays
 func (h *CompassHandler) CreateEssay(c *gin.Context) {
+	// IDs accept decimal strings (preferred for snowflakes) or JSON numbers.
 	var body struct {
-		Title        string `json:"title"`
-		Body         string `json:"body"`
-		CollectionID *int64 `json:"collection_id"`
-		CourseID     *int64 `json:"course_id"`
-		ParentID     *int64 `json:"parent_id"`
-		SpaceKey     string `json:"space_key"`
-		ContentType  string `json:"content_type"`
+		Title        string          `json:"title"`
+		Body         string          `json:"body"`
+		CollectionID json.RawMessage `json:"collection_id"`
+		CourseID     json.RawMessage `json:"course_id"`
+		ParentID     json.RawMessage `json:"parent_id"`
+		SpaceKey     string          `json:"space_key"`
+		ContentType  string          `json:"content_type"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		respFail(c, http.StatusBadRequest, constant.BadRequestErr.Error())
 		return
 	}
+	collectionID, err := parseOptionalJSONInt64(body.CollectionID)
+	if err != nil {
+		respFail(c, http.StatusBadRequest, constant.BadRequestErr.Error())
+		return
+	}
+	courseID, err := parseOptionalJSONInt64(body.CourseID)
+	if err != nil {
+		respFail(c, http.StatusBadRequest, constant.BadRequestErr.Error())
+		return
+	}
+	parentID, err := parseOptionalJSONInt64(body.ParentID)
+	if err != nil {
+		respFail(c, http.StatusBadRequest, constant.BadRequestErr.Error())
+		return
+	}
 	page, err := h.svc.CreateEssay(h.userID(c), service.CreateEssayInput{
 		Title: body.Title, Body: body.Body,
-		CollectionID: body.CollectionID, CourseID: body.CourseID,
-		ParentID: body.ParentID, SpaceKey: body.SpaceKey, ContentType: body.ContentType,
+		CollectionID: collectionID, CourseID: courseID,
+		ParentID: parentID, SpaceKey: body.SpaceKey, ContentType: body.ContentType,
 	})
 	if err != nil {
 		h.mapErr(c, err)
@@ -369,4 +387,24 @@ func queryInt(c *gin.Context, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// parseOptionalJSONInt64 accepts null/empty, JSON number, or decimal string
+// so snowflake IDs beyond JS safe-integer range stay exact when sent as strings.
+func parseOptionalJSONInt64(raw json.RawMessage) (*int64, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	s := strings.TrimSpace(string(raw))
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	if s == "" {
+		return nil, nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
 }

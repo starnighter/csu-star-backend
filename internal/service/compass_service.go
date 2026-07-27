@@ -171,9 +171,10 @@ func (s *CompassService) GetPage(userID, pageID int64) (*model.CompassPage, bool
 		}
 		return nil, false, err
 	}
-	// bump view (best-effort)
-	page.ViewCount++
-	_ = s.store.UpdatePage(page)
+	// Atomic view bump only — never full Save (would race with concurrent UpdatePage).
+	if err := s.store.IncrementViewCount(pageID); err == nil {
+		page.ViewCount++
+	}
 	canWrite, err := s.CanWrite(userID, "", page)
 	if err != nil {
 		return nil, false, err
