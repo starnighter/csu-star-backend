@@ -40,6 +40,13 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	if err := compassStore.AutoMigrate(); err != nil {
 		return nil, fmt.Errorf("compass auto migrate: %w", err)
 	}
+	// One-time-style seed: copy published wiki → compass_pages (idempotent upsert).
+	if n, err := docengine.ImportPublishedWiki(db); err != nil {
+		return nil, fmt.Errorf("compass wiki import: %w", err)
+	} else if n > 0 {
+		// logged inside ImportPublishedWiki
+		_ = n
+	}
 
 	// 初始化service
 	securitySvc := service.NewSecurityService(db)
