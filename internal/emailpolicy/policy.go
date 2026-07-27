@@ -1,7 +1,7 @@
 // Package emailpolicy 负责账号邮箱的规范化与域名准入判断。
 //
 // 它只依赖 config 和 internal/constant，故意不放在 pkg/utils（那是基础设施层）
-// 也不放在 internal/service（email_register_service 之外还有 admin_service 要用）。
+// 也不放在 internal/service（auth / admin 等多处服务都会用到）。
 //
 // 两条必须遵守的约束：
 //  1. 所有判断都实时读 config.GetConfig()，绝不在包级缓存，否则 SIGHUP 热重载失效。

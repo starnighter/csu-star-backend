@@ -4,7 +4,6 @@ import (
 	"context"
 	"csu-star-backend/config"
 	"csu-star-backend/internal/repo"
-	"csu-star-backend/internal/service"
 	"csu-star-backend/internal/task"
 	"csu-star-backend/logger"
 	"csu-star-backend/pkg/mailer"
@@ -153,12 +152,6 @@ func main() {
 	appCtx, cancelBackgroundTasks := context.WithCancel(context.Background())
 	scheduler := task.NewScheduler(db, aggregateRepo, courseRepo, teacherRepo, miscRepo)
 	scheduler.Start(appCtx)
-
-	// 初始化邮箱注册轮询服务
-	userRepo := repo.NewUserRepository(db)
-	emailRegSvc := service.NewEmailRegisterService(userRepo)
-	emailRegPoller := task.NewEmailRegisterPoller(emailRegSvc)
-	emailRegPoller.Start(appCtx)
 
 	// 配置HTTP Sever
 	addr := fmt.Sprintf("%s:%v", resolveBindHost(globalCfg.Server.BindHost), globalCfg.Server.Port)

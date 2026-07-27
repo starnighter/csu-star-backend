@@ -112,12 +112,10 @@ type CosConfig struct {
 }
 
 type MailConfig struct {
-	Brand         MailBrandConfig        `mapstructure:"brand"`
-	Delivery      MailDeliveryConfig     `mapstructure:"delivery"`
-	AccountEmail  AccountEmailConfig     `mapstructure:"account_email"`
-	Verification  VerificationMailConfig `mapstructure:"verification"`
-	Imap          IMAPConfig             `mapstructure:"imap"`
-	EmailRegister EmailRegisterConfig    `mapstructure:"email_register"`
+	Brand        MailBrandConfig        `mapstructure:"brand"`
+	Delivery     MailDeliveryConfig     `mapstructure:"delivery"`
+	AccountEmail AccountEmailConfig     `mapstructure:"account_email"`
+	Verification VerificationMailConfig `mapstructure:"verification"`
 }
 
 type MailBrandConfig struct {
@@ -138,25 +136,6 @@ type AccountEmailConfig struct {
 	Policy         string   `mapstructure:"policy"`
 	AllowedDomains []string `mapstructure:"allowed_domains"`
 	BlockedDomains []string `mapstructure:"blocked_domains"`
-}
-
-type IMAPConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
-type EmailRegisterConfig struct {
-	Enabled         bool `mapstructure:"enabled"`
-	PollIntervalSec int  `mapstructure:"poll_interval_sec"`
-	IdleRefreshSec  int  `mapstructure:"idle_refresh_sec"`
-	MinPasswordLen  int  `mapstructure:"min_password_len"`
-	MaxPasswordLen  int  `mapstructure:"max_password_len"`
-	// AllowedSenderDomains 是这条 IMAP 入站通道自己的发件人域名白名单，
-	// 刻意独立于 AccountEmailConfig：发件人只靠可伪造的 From 头认证，
-	// 绝不能跟着账号策略一起放开。
-	AllowedSenderDomains []string `mapstructure:"allowed_sender_domains"`
 }
 
 type VerificationMailConfig struct {
@@ -227,9 +206,6 @@ func setDefaults() {
 	viper.SetDefault("mail.delivery.per_try_timeout_sec", 10)
 	viper.SetDefault("mail.delivery.total_budget_sec", 20)
 	viper.SetDefault("mail.delivery.max_attempts", 3)
-
-	viper.SetDefault("mail.email_register.enabled", false)
-	viper.SetDefault("mail.email_register.allowed_sender_domains", []string{"csu.edu.cn"})
 }
 
 func Init() error {

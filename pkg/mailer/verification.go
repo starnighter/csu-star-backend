@@ -3,7 +3,6 @@ package mailer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"html"
 	"strconv"
 	"strings"
@@ -125,17 +124,10 @@ func SendTestEmail(ctx context.Context, p Provider, to string) error {
 
 // RenderForSmoke 渲染但不发送，供 cmd/mail_smoke 的 -dry-run 使用。
 // 这是唯一能在不消耗发送额度、不等 DNS 生效的情况下检查报文头的途径。
-func RenderForSmoke(p Provider, kind, code, to string) (raw []byte, messageID string, err error) {
-	msg := &Message{To: []string{to}}
-	if kind == "reply" {
-		_, loginURL := brand()
-		msg.Subject = replyEmailSubject
-		msg.TextBody = fmt.Sprintf(registrationSuccessBody, to, loginURL)
-		msg.ReplyTo = replyToAddress()
-		msg.ExtraHeaders = map[string]string{ReplyHeaderKey: "true"}
-	} else {
-		msg.Subject = verificationSubject()
-		msg.HTMLBody = renderVerificationEmailHTML(code)
-	}
-	return buildMIME(p, msg)
+func RenderForSmoke(p Provider, code, to string) (raw []byte, messageID string, err error) {
+	return buildMIME(p, &Message{
+		To:       []string{to},
+		Subject:  verificationSubject(),
+		HTMLBody: renderVerificationEmailHTML(code),
+	})
 }

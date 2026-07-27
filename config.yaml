@@ -96,21 +96,6 @@ mail:
         password: "your_126_smtp_password"
         from_email_addr: "your_126_username"
         from_name: "CSU Star"
-  imap:
-    host: "imap.qq.com"
-    port: 993
-    username: "your_foxmail_username"
-    password: "your_foxmail_password"
-  email_register:
-    # 这条入站通道只靠可伪造的 From 头认证发件人，账号邮箱放开后默认关闭
-    enabled: false
-    poll_interval_sec: 1800
-    idle_refresh_sec: 600
-    # 独立于 mail.account_email，重新启用时不会继承放开后的账号策略
-    allowed_sender_domains:
-      - "csu.edu.cn"
-    min_password_len: 6
-    max_password_len: 128
 
 oauth:
   qq:

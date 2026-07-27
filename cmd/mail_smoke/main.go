@@ -26,7 +26,6 @@ func main() {
 	var (
 		to        = flag.String("to", "", "收件地址（必填）")
 		provider  = flag.String("provider", "", "只用指定名字的通道，留空表示走整个分层池")
-		kind      = flag.String("kind", "verification", "邮件类型：verification | reply")
 		code      = flag.String("code", "123456", "验证码内容")
 		configDir = flag.String("config", ".", "配置文件所在目录")
 		dryRun    = flag.Bool("dry-run", false, "只渲染报文并打印，不联网发送")
@@ -87,7 +86,7 @@ func main() {
 
 	if *dryRun {
 		fmt.Printf("\n===== DRY RUN：以下是将要投递的完整报文 =====\n\n")
-		raw, messageID, err := mailer.RenderForSmoke(providers[0], *kind, *code, *to)
+		raw, messageID, err := mailer.RenderForSmoke(providers[0], *code, *to)
 		if err != nil {
 			fatalf("渲染报文失败: %v", err)
 		}
@@ -96,12 +95,10 @@ func main() {
 		return
 	}
 
-	fmt.Printf("\n正在发送 %s 邮件到 %s ...\n", *kind, *to)
+	fmt.Printf("\n正在发送验证码邮件到 %s ...\n", *to)
 	var err error
 	if *provider != "" {
 		err = mailer.SendTestEmail(context.Background(), providers[0], *to)
-	} else if *kind == "reply" {
-		err = mailer.SendRegistrationReplyEmail(*to, true)
 	} else {
 		err = mailer.SendVerificationEmail([]string{*to}, *code)
 	}

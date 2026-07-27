@@ -20,8 +20,7 @@ const (
 	AbusePrefix                  = "abuse:"
 	CacheRandomCoursesPrefix     = "random:courses:"
 	CacheRandomTeachersPrefix    = "random:teachers:"
-	ResourceUploadSessionPrefix  = "resource:upload:session:"
-	EmailRegisterRateLimitPrefix = "email_register:ratelimit:"
+	ResourceUploadSessionPrefix = "resource:upload:session:"
 
 	// 腾讯云相关常量
 	TencentCosAvatarsKeyPrefix          = "avatars/"

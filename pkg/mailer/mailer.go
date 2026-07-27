@@ -3,18 +3,13 @@
 // 从 pkg/utils 独立出来的原因：邮件已经是一个有自己的配置、重试策略、MIME
 // 构造和多通道编排的子系统，而 pkg/utils 是基础设施杂物间（redis/cos/snowflake）。
 //
-// 依赖方向：mailer 只 import config 和 logger。pkg/utils 反过来依赖 mailer
-// （imap_client 需要 ReplyHeaderKey），所以 mailer 绝不能 import pkg/utils。
+// 依赖方向：mailer 只 import config 和 logger，绝不能 import pkg/utils。
 package mailer
 
 import (
 	"context"
 	"errors"
 )
-
-// ReplyHeaderKey 标记由本系统发出的注册回信。IMAP 轮询器靠它跳过自己的回信，
-// 否则 poller 会对自己的回信无限回复。
-const ReplyHeaderKey = "X-CSU-Star-Reply"
 
 // Kind 是投递通道的类型。它决定优先级：只要配置了任何一个云厂商通道，
 // 自建/消费级 SMTP 就只作兜底。

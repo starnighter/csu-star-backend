@@ -115,26 +115,24 @@ func TestBuildMIMEBodyBase64RoundTrips(t *testing.T) {
 	}
 }
 
-// X-CSU-Star-Reply 是 IMAP 轮询器识别自己回信的唯一依据。
-// 这个头一旦丢失，poller 会对自己的回信无限回复。
 func TestBuildMIMEIncludesReplyToAndExtraHeaders(t *testing.T) {
 	raw, _, err := buildMIME(testProvider(), &Message{
 		To:           []string{"a@qq.com"},
 		Subject:      "s",
 		TextBody:     "b",
-		ReplyTo:      "logincsu@foxmail.com",
-		ExtraHeaders: map[string]string{ReplyHeaderKey: "true"},
+		ReplyTo:      "noreply@example.com",
+		ExtraHeaders: map[string]string{"X-Custom-Header": "true"},
 	})
 	if err != nil {
 		t.Fatalf("buildMIME() error = %v", err)
 	}
 
 	msg, _ := parseBuilt(t, raw)
-	if got := msg.Header.Get("Reply-To"); got != "logincsu@foxmail.com" {
+	if got := msg.Header.Get("Reply-To"); got != "noreply@example.com" {
 		t.Fatalf("Reply-To = %q", got)
 	}
-	if got := msg.Header.Get(ReplyHeaderKey); got != "true" {
-		t.Fatalf("%s = %q", ReplyHeaderKey, got)
+	if got := msg.Header.Get("X-Custom-Header"); got != "true" {
+		t.Fatalf("X-Custom-Header = %q", got)
 	}
 }
 

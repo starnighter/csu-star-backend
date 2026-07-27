@@ -151,27 +151,3 @@ func groupIntoTiers(providers []Provider) [][]Provider {
 	}
 	return tiers
 }
-
-// ReplyProviders 返回可用于发送注册回信的通道，排除 IMAP 收信箱本身，
-// 避免回信被自己的轮询器再次读取。
-func ReplyProviders() []Provider {
-	cfg := config.GetConfig()
-	imapUser := ""
-	if cfg != nil {
-		imapUser = strings.TrimSpace(strings.ToLower(cfg.Mail.Imap.Username))
-	}
-
-	all := Providers()
-	if imapUser == "" {
-		return all
-	}
-
-	out := make([]Provider, 0, len(all))
-	for _, p := range all {
-		if strings.EqualFold(strings.TrimSpace(p.Username), imapUser) {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
