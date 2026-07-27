@@ -68,6 +68,9 @@ type CompassPage struct {
 	OwnerID      int64      `gorm:"not null;index" json:"owner_id,string"`
 	CollectionID *int64     `gorm:"index" json:"collection_id,string,omitempty"`
 	CourseID     *int64     `gorm:"index" json:"course_id,string,omitempty"`
+	// ExternalKey links imported sources without reusing their raw IDs
+	// (e.g. wiki_cat:1, wiki_doc:13). Nil for native compass pages (unique allows many NULLs).
+	ExternalKey  *string    `gorm:"type:varchar(64);uniqueIndex" json:"external_key,omitempty"`
 	ContentType  string     `gorm:"type:varchar(32);not null;index" json:"content_type"`
 	Title        string     `gorm:"type:varchar(256);not null" json:"title"`
 	Body         string     `gorm:"type:text;not null" json:"body"`

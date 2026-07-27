@@ -3,7 +3,8 @@ package docengine
 import (
 	"csu-star-backend/internal/model"
 	"csu-star-backend/logger"
-	"strings"
+	"csu-star-backend/pkg/utils"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -19,23 +20,75 @@ var wikiSectionToCompass = map[string]struct {
 	string(model.WikiSectionMajor):   {Space: model.CompassSpaceMajors, CType: model.CompassContentMajor},
 }
 
+func wikiCatKey(id int64) string { return fmt.Sprintf("wiki_cat:%d", id) }
+func wikiDocKey(id int64) string { return fmt.Sprintf("wiki_doc:%d", id) }
+
+// RepairAndImportPublishedWiki removes the broken first-generation import
+// (pages that reused wiki row IDs and cross-linked majors → guides), then
+// re-imports with stable external_key mapping and fresh snowflake page IDs.
+func RepairAndImportPublishedWiki(db *gorm.DB) (imported int, err error) {
+	if db == nil {
+		return 0, nil
+	}
+	if err := purgeBrokenWikiImport(db); err != nil {
+		return 0, err
+	}
+	return ImportPublishedWiki(db)
+}
+
+// purgeBrokenWikiImport deletes guides/majors pages from the bad import and
+// any page whose external_key is a wiki_* source (safe re-import).
+func purgeBrokenWikiImport(db *gorm.DB) error {
+	// Collect ids to purge
+	var ids []int64
+	if err := db.Unscoped().Model(&model.CompassPage{}).
+		Where("space_key IN ? OR external_key LIKE ? OR external_key LIKE ?",
+			[]string{model.CompassSpaceGuides, model.CompassSpaceMajors},
+			"wiki_cat:%", "wiki_doc:%").
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	// Legacy broken import used wiki serial IDs as page PKs with no external_key;
+	// space_key filter above already covers those.
+	if len(ids) == 0 {
+		// Also catch legacy broken rows: space still guides/majors after partial purge
+		return nil
+	}
+	if err := db.Unscoped().Where("page_id IN ?", ids).Delete(&model.CompassPageHistory{}).Error; err != nil {
+		return err
+	}
+	if err := db.Unscoped().Where("page_id IN ?", ids).Delete(&model.CompassPageWriter{}).Error; err != nil {
+		return err
+	}
+	if err := db.Unscoped().Where("page_id IN ?", ids).Delete(&model.CompassComment{}).Error; err != nil {
+		return err
+	}
+	if err := db.Unscoped().Where("page_id IN ?", ids).Delete(&model.CompassEditRequest{}).Error; err != nil {
+		return err
+	}
+	if err := db.Unscoped().Where("id IN ?", ids).Delete(&model.CompassPage{}).Error; err != nil {
+		return err
+	}
+	if logger.Log != nil {
+		logger.Log.Info("purged broken compass wiki import pages", zap.Int("count", len(ids)))
+	}
+	return nil
+}
+
 // ImportPublishedWiki copies published wiki_documents (+ category folders) into
-// compass_pages so guides/majors use the same engine as essays/courses.
-// Idempotent: re-run updates title/body/tree; preserves view counters.
+// compass_pages. Uses external_key for idempotency; never reuses wiki row IDs
+// as compass page primary keys.
 func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 	if db == nil {
 		return 0, nil
 	}
 
 	ownerID := systemOwnerID(db)
+	catPageID := make(map[int64]int64) // wiki category id → compass page id
 
 	var categories []model.WikiCategories
 	if err := db.Order("sort_order ASC, id ASC").Find(&categories).Error; err != nil {
 		return 0, err
-	}
-	catByID := make(map[int64]model.WikiCategories, len(categories))
-	for _, c := range categories {
-		catByID[c.ID] = c
 	}
 
 	for _, c := range categories {
@@ -43,8 +96,8 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 		if !ok {
 			continue
 		}
-		page := model.CompassPage{
-			ID:          c.ID,
+		key := wikiCatKey(c.ID)
+		pageID, err := upsertByExternalKey(db, key, model.CompassPage{
 			SpaceKey:    mapping.Space,
 			OwnerID:     ownerID,
 			ContentType: mapping.CType,
@@ -52,10 +105,11 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 			Body:        "",
 			SortOrder:   c.SortOrder,
 			PublishedAt: time.Now(),
-		}
-		if err := upsertCompassPage(db, &page); err != nil {
+		})
+		if err != nil {
 			return imported, err
 		}
+		catPageID[c.ID] = pageID
 		imported++
 	}
 
@@ -73,8 +127,7 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 		}
 		var parentID *int64
 		if d.CategoryID != nil {
-			if _, exists := catByID[*d.CategoryID]; exists {
-				pid := *d.CategoryID
+			if pid, exists := catPageID[*d.CategoryID]; exists {
 				parentID = &pid
 			}
 		}
@@ -82,8 +135,8 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 		if d.PublishedAt != nil {
 			published = *d.PublishedAt
 		}
-		page := model.CompassPage{
-			ID:          d.ID,
+		key := wikiDocKey(d.ID)
+		if _, err := upsertByExternalKey(db, key, model.CompassPage{
 			SpaceKey:    mapping.Space,
 			ParentID:    parentID,
 			OwnerID:     ownerID,
@@ -92,8 +145,7 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 			Body:        d.Content,
 			SortOrder:   d.SortOrder,
 			PublishedAt: published,
-		}
-		if err := upsertCompassPage(db, &page); err != nil {
+		}); err != nil {
 			return imported, err
 		}
 		imported++
@@ -122,18 +174,23 @@ func systemOwnerID(db *gorm.DB) int64 {
 	return 1
 }
 
-func upsertCompassPage(db *gorm.DB, page *model.CompassPage) error {
+// upsertByExternalKey creates or updates a page keyed by external_key.
+// Returns the compass page id.
+func upsertByExternalKey(db *gorm.DB, externalKey string, page model.CompassPage) (int64, error) {
 	now := time.Now()
 	if page.PublishedAt.IsZero() {
 		page.PublishedAt = now
 	}
+	ek := externalKey
+	page.ExternalKey = &ek
 
 	var existing model.CompassPage
-	if err := db.Unscoped().Where("id = ?", page.ID).Limit(1).Find(&existing).Error; err != nil {
-		return err
+	err := db.Unscoped().Where("external_key = ?", externalKey).Limit(1).Find(&existing).Error
+	if err != nil {
+		return 0, err
 	}
 	if existing.ID != 0 {
-		return db.Unscoped().Model(&model.CompassPage{}).Where("id = ?", page.ID).Updates(map[string]any{
+		if err := db.Unscoped().Model(&model.CompassPage{}).Where("id = ?", existing.ID).Updates(map[string]any{
 			"space_key":    page.SpaceKey,
 			"parent_id":    page.ParentID,
 			"owner_id":     page.OwnerID,
@@ -142,36 +199,35 @@ func upsertCompassPage(db *gorm.DB, page *model.CompassPage) error {
 			"body":         page.Body,
 			"sort_order":   page.SortOrder,
 			"published_at": page.PublishedAt,
+			"external_key": ek,
 			"deleted_at":   nil,
 			"updated_at":   now,
-		}).Error
+		}).Error; err != nil {
+			return 0, err
+		}
+		return existing.ID, nil
 	}
 
+	if page.ID == 0 {
+		page.ID = utils.GenerateID()
+	}
 	page.CreatedAt = now
 	page.UpdatedAt = now
 	page.HotScore = 0
-	if err := db.Create(page).Error; err != nil {
-		// race: another worker created it
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
-			strings.Contains(err.Error(), "UNIQUE") {
-			return db.Model(&model.CompassPage{}).Where("id = ?", page.ID).Updates(map[string]any{
-				"space_key": page.SpaceKey, "parent_id": page.ParentID, "title": page.Title,
-				"body": page.Body, "sort_order": page.SortOrder, "content_type": page.ContentType,
-				"updated_at": now,
-			}).Error
-		}
-		return err
+	if err := db.Create(&page).Error; err != nil {
+		return 0, err
 	}
 
 	var histCount int64
 	_ = db.Model(&model.CompassPageHistory{}).Where("page_id = ?", page.ID).Count(&histCount).Error
 	if histCount == 0 {
-		// history id: page.ID based offset avoids requiring snowflake in import path
 		h := model.CompassPageHistory{
-			ID: page.ID, // one initial snapshot per page; unique with page_id later entries use snowflake
-			PageID: page.ID, EditorID: page.OwnerID, Title: page.Title, Body: page.Body,
+			ID: utils.GenerateID(), PageID: page.ID, EditorID: page.OwnerID,
+			Title: page.Title, Body: page.Body,
 		}
-		return db.Create(&h).Error
+		if err := db.Create(&h).Error; err != nil {
+			return page.ID, err
+		}
 	}
-	return nil
+	return page.ID, nil
 }
