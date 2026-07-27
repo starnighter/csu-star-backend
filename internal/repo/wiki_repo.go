@@ -34,6 +34,9 @@ type WikiDocListQuery struct {
 type WikiRepository interface {
 	WithTx(tx *gorm.DB) WikiRepository
 
+	ListSections() ([]model.WikiSections, error)
+	GetSection(key string) (*model.WikiSections, error)
+
 	ListCategories(section string) ([]WikiCategoryItem, error)
 	GetCategoryByID(id int64) (*model.WikiCategories, error)
 	CreateCategory(c *model.WikiCategories) error
@@ -63,6 +66,22 @@ func NewWikiRepository(db *gorm.DB) WikiRepository {
 
 func (r *wikiRepository) WithTx(tx *gorm.DB) WikiRepository {
 	return &wikiRepository{db: tx}
+}
+
+func (r *wikiRepository) ListSections() ([]model.WikiSections, error) {
+	var out []model.WikiSections
+	err := r.db.Model(&model.WikiSections{}).
+		Order("sort_order ASC, key ASC").
+		Find(&out).Error
+	return out, err
+}
+
+func (r *wikiRepository) GetSection(key string) (*model.WikiSections, error) {
+	var s model.WikiSections
+	if err := r.db.Where("key = ?", key).First(&s).Error; err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (r *wikiRepository) ListCategories(section string) ([]WikiCategoryItem, error) {

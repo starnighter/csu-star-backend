@@ -48,6 +48,17 @@ func (h *WikiHandler) GetDoc(c *gin.Context) {
 	}
 }
 
+// ---------- admin:板块注册表 ----------
+
+func (h *WikiHandler) ListSections(c *gin.Context) {
+	items, err := h.wikiSvc.ListSectionMetas()
+	if err != nil {
+		failInternalWithLog(c, err)
+		return
+	}
+	resp.Success(c, gin.H{"items": items})
+}
+
 // ---------- admin:分类 ----------
 
 func (h *WikiHandler) ListCategories(c *gin.Context) {

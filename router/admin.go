@@ -35,6 +35,7 @@ func SetUpAdminRouter(r *gin.Engine, adminHandler *handler.AdminHandler, mailHan
 		// Wiki 文档管理:读对 admin/auditor 开放,写仅 admin。
 		wikiGroup := adminGroup.Group("/wiki")
 		{
+			wikiGroup.GET("/sections", wikiHandler.ListSections)
 			wikiGroup.GET("/categories", wikiHandler.ListCategories)
 			wikiGroup.GET("/docs", wikiHandler.ListDocs)
 			wikiGroup.GET("/docs/:id", wikiHandler.GetDocByID)

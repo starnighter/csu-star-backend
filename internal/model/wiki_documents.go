@@ -8,16 +8,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// WikiSection 板块 key（对应 wiki_sections.key）。
+// 预置常量仅作代码引用；合法性以注册表为准。
 type WikiSection string
 
 const (
 	WikiSectionCompass WikiSection = "compass"
 	WikiSectionMajor   WikiSection = "major"
 )
-
-func (s WikiSection) Valid() bool {
-	return s == WikiSectionCompass || s == WikiSectionMajor
-}
 
 func (s WikiSection) Value() (driver.Value, error) {
 	return string(s), nil
@@ -26,6 +24,7 @@ func (s WikiSection) Value() (driver.Value, error) {
 func (s *WikiSection) Scan(src interface{}) error {
 	if src == nil {
 		*s = ""
+		return nil
 	}
 	switch v := src.(type) {
 	case []byte:
@@ -38,10 +37,24 @@ func (s *WikiSection) Scan(src interface{}) error {
 	return nil
 }
 
-// WikiCategories 是 major 板块下的分组(学院)。compass 板块无分组。
+// WikiSections 板块注册表：可扩展多板块。
+type WikiSections struct {
+	Key             string         `gorm:"primary_key;type:varchar(32)" json:"key"`
+	Title           string         `gorm:"type:varchar(64);not null" json:"title"`
+	SortOrder       int            `gorm:"type:integer" json:"sort_order"`
+	AllowCategories bool           `gorm:"type:boolean;not null" json:"allow_categories"`
+	CreatedAt       time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time      `gorm:"type:autoUpdateTime" json:"updated_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (WikiSections) TableName() string { return "wiki_sections" }
+
+// WikiCategories 是某板块下的分组（如 major 下的学院）。
+// allow_categories=false 的板块不应有分类。
 type WikiCategories struct {
 	ID        int64          `gorm:"primary_key" json:"id,string"`
-	Section   WikiSection    `gorm:"type:wiki_section;not null" json:"section"`
+	Section   WikiSection    `gorm:"type:varchar(32);not null" json:"section"`
 	Name      string         `gorm:"type:varchar(64);not null" json:"name"`
 	SortOrder int            `gorm:"type:integer" json:"sort_order"`
 	CreatedAt time.Time      `gorm:"type:autoCreateTime" json:"created_at"`
@@ -51,11 +64,10 @@ type WikiCategories struct {
 
 func (WikiCategories) TableName() string { return "wiki_categories" }
 
-// WikiDocuments 的 CategoryID 为 NULL 表示板块直属文档
-// (compass 全部文档、major 板块的「简介」)。
+// WikiDocuments 的 CategoryID 为 NULL 表示板块直属文档。
 type WikiDocuments struct {
 	ID          int64          `gorm:"primary_key" json:"id,string"`
-	Section     WikiSection    `gorm:"type:wiki_section;not null" json:"section"`
+	Section     WikiSection    `gorm:"type:varchar(32);not null" json:"section"`
 	CategoryID  *int64         `gorm:"type:bigint" json:"category_id,string"`
 	Slug        string         `gorm:"type:varchar(128);not null" json:"slug"`
 	Title       string         `gorm:"type:varchar(128);not null" json:"title"`

@@ -58,9 +58,19 @@ type WikiTreeCategory struct {
 }
 
 type WikiTreeSection struct {
-	Section    string             `json:"section"`
-	Docs       []WikiTreeDoc      `json:"docs"`
-	Categories []WikiTreeCategory `json:"categories"`
+	Section         string             `json:"section"`
+	Title           string             `json:"title"`
+	AllowCategories bool               `json:"allow_categories"`
+	Docs            []WikiTreeDoc      `json:"docs"`
+	Categories      []WikiTreeCategory `json:"categories"`
+}
+
+// WikiSectionMeta 管理端板块列表项。
+type WikiSectionMeta struct {
+	Key             string `json:"key"`
+	Title           string `json:"title"`
+	SortOrder       int    `json:"sort_order"`
+	AllowCategories bool   `json:"allow_categories"`
 }
 
 type WikiTree struct {
@@ -104,6 +114,10 @@ func (s *WikiService) GetTree() (*WikiTree, error) {
 }
 
 func (s *WikiService) buildTree() (*WikiTree, error) {
+	registry, err := s.repo.ListSections()
+	if err != nil {
+		return nil, err
+	}
 	categories, err := s.repo.ListCategories("")
 	if err != nil {
 		return nil, err
@@ -113,13 +127,19 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 		return nil, err
 	}
 
-	sections := []WikiTreeSection{
-		{Section: string(model.WikiSectionCompass), Docs: []WikiTreeDoc{}, Categories: []WikiTreeCategory{}},
-		{Section: string(model.WikiSectionMajor), Docs: []WikiTreeDoc{}, Categories: []WikiTreeCategory{}},
+	sections := make([]WikiTreeSection, 0, len(registry))
+	sectionIndex := make(map[model.WikiSection]*WikiTreeSection, len(registry))
+	for _, reg := range registry {
+		sections = append(sections, WikiTreeSection{
+			Section:         reg.Key,
+			Title:           reg.Title,
+			AllowCategories: reg.AllowCategories,
+			Docs:            []WikiTreeDoc{},
+			Categories:      []WikiTreeCategory{},
+		})
 	}
-	sectionIndex := map[model.WikiSection]*WikiTreeSection{
-		model.WikiSectionCompass: &sections[0],
-		model.WikiSectionMajor:   &sections[1],
+	for i := range sections {
+		sectionIndex[model.WikiSection(sections[i].Section)] = &sections[i]
 	}
 
 	// 先按分类分桶,再组装分类列表;不可持有指向 sec.Categories 元素的指针,append 扩容会使其失效。
@@ -142,7 +162,7 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 
 	for _, c := range categories {
 		sec, ok := sectionIndex[c.Section]
-		if !ok {
+		if !ok || !sec.AllowCategories {
 			continue
 		}
 		sec.Categories = append(sec.Categories, WikiTreeCategory{ID: c.ID, Name: c.Name, Docs: docsByCategory[c.ID]})
@@ -151,10 +171,46 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 	return &WikiTree{Sections: sections}, nil
 }
 
+// ListSectionMetas 管理端 / 前端需要的板块注册表。
+func (s *WikiService) ListSectionMetas() ([]WikiSectionMeta, error) {
+	rows, err := s.repo.ListSections()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WikiSectionMeta, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WikiSectionMeta{
+			Key:             r.Key,
+			Title:           r.Title,
+			SortOrder:       r.SortOrder,
+			AllowCategories: r.AllowCategories,
+		})
+	}
+	return out, nil
+}
+
+func (s *WikiService) requireSection(key string) (*model.WikiSections, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, ErrWikiInvalidPayload
+	}
+	sec, err := s.repo.GetSection(key)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrWikiInvalidPayload
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sec, nil
+}
+
 // GetDoc 返回已发布文档详情。未发布/不存在统一返回 ErrWikiNotFound,不暴露草稿存在性。
 func (s *WikiService) GetDoc(section, slug string) (*WikiDocDetail, error) {
+	if _, err := s.requireSection(section); err != nil {
+		return nil, ErrWikiNotFound
+	}
 	sec := model.WikiSection(section)
-	if !sec.Valid() || strings.TrimSpace(slug) == "" {
+	if strings.TrimSpace(slug) == "" {
 		return nil, ErrWikiNotFound
 	}
 
@@ -223,19 +279,26 @@ func (s *WikiService) ListCategories(section string) ([]repo.WikiCategoryItem, e
 }
 
 func (s *WikiService) CreateCategory(operatorID int64, section, name string, sortOrder *int, ip net.IP) (*model.WikiCategories, error) {
-	sec := model.WikiSection(section)
 	if section == "" {
-		sec = model.WikiSectionMajor
+		section = string(model.WikiSectionMajor)
 	}
+	reg, err := s.requireSection(section)
+	if err != nil {
+		return nil, err
+	}
+	if !reg.AllowCategories {
+		return nil, ErrWikiInvalidPayload
+	}
+	sec := model.WikiSection(section)
 	name = strings.TrimSpace(name)
-	if !sec.Valid() || name == "" {
+	if name == "" {
 		return nil, ErrWikiInvalidPayload
 	}
 	category := &model.WikiCategories{Section: sec, Name: name}
 	if sortOrder != nil {
 		category.SortOrder = *sortOrder
 	}
-	err := s.withWriteTx(func(r repo.WikiRepository) error {
+	err = s.withWriteTx(func(r repo.WikiRepository) error {
 		if err := r.CreateCategory(category); err != nil {
 			return err
 		}
@@ -379,12 +442,19 @@ func (s *WikiService) GetDocByID(id int64) (*model.WikiDocuments, error) {
 	return doc, err
 }
 
-// validateDocPlacement 校验「compass 无分组、分组板块一致」的结构约束。
+// validateDocPlacement 校验「板块是否允许分组、分组板块一致」。
 func validateDocPlacement(r repo.WikiRepository, section model.WikiSection, categoryID *int64) error {
+	reg, err := r.GetSection(string(section))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrWikiInvalidPayload
+	}
+	if err != nil {
+		return err
+	}
 	if categoryID == nil {
 		return nil
 	}
-	if section == model.WikiSectionCompass {
+	if !reg.AllowCategories {
 		return ErrWikiInvalidPayload
 	}
 	category, err := r.GetCategoryByID(*categoryID)
@@ -405,10 +475,13 @@ func isUniqueViolation(err error) bool {
 }
 
 func (s *WikiService) CreateDoc(operatorID int64, section string, categoryID *int64, slug, title, content string, sortOrder *int, ip net.IP) (*model.WikiDocuments, error) {
+	if _, err := s.requireSection(section); err != nil {
+		return nil, err
+	}
 	sec := model.WikiSection(section)
 	title = strings.TrimSpace(title)
 	slug = strings.TrimSpace(slug)
-	if !sec.Valid() || title == "" {
+	if title == "" {
 		return nil, ErrWikiInvalidPayload
 	}
 	if slug == "" {
