@@ -1,6 +1,7 @@
 package router
 
 import (
+	"csu-star-backend/internal/docengine"
 	"csu-star-backend/internal/handler"
 	middlewarepackage "csu-star-backend/internal/middleware"
 	"csu-star-backend/internal/realtime"
@@ -34,6 +35,12 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	mailProviderRepo := repo.NewMailProviderRepository(db)
 	wikiRepo := repo.NewWikiRepository(db)
 
+	// compass / 知识广场 document store (local GORM engine; Docmost-swappable via docengine.Store)
+	compassStore := docengine.NewGormStore(db)
+	if err := compassStore.AutoMigrate(); err != nil {
+		return nil, fmt.Errorf("compass auto migrate: %w", err)
+	}
+
 	// 初始化service
 	securitySvc := service.NewSecurityService(db)
 	authSvc := service.NewAuthService(userRepo, invitationRepo)
@@ -55,6 +62,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	authSvc.SetMiscService(miscSvc)
 	mailProviderSvc := service.NewMailProviderService(mailProviderRepo)
 	wikiSvc := service.NewWikiService(db, wikiRepo)
+	compassSvc := service.NewCompassService(compassStore)
 	// 注册后发信通道优先取数据库里管理端配置的，本表为空时回落到 config.yaml
 	mailProviderSvc.Install()
 	middlewarepackage.InitSecurityService(securitySvc)
@@ -78,6 +86,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	adminHandler := handler.NewAdminHandler(adminSvc)
 	mailProviderHandler := handler.NewMailProviderHandler(mailProviderSvc)
 	wikiHandler := handler.NewWikiHandler(wikiSvc)
+	compassHandler := handler.NewCompassHandler(compassSvc)
 	wsHandler := handler.NewWSHandler(miscSvc, wsHub)
 
 	SetupAuthRouter(r, authHandler)
@@ -90,6 +99,7 @@ func SetUpRouter(db *gorm.DB, client *http.Client, trustedProxies []string) (*gi
 	SetUpSocialRouter(r, socialHandler)
 	SetUpMiscRouter(r, miscHandler)
 	SetUpWikiRouter(r, wikiHandler)
+	SetUpCompassRouter(r, compassHandler)
 	SetUpAdminRouter(r, adminHandler, mailProviderHandler, wikiHandler)
 	SetUpWSRouter(r, wsHandler)
 
