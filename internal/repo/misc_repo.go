@@ -625,7 +625,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 					FROM teachers
 					WHERE teachers.status = 'active'
 				) AS search_results
-				ORDER BY metric_primary DESC, metric_secondary DESC, created_at DESC
+				ORDER BY metric_primary DESC, metric_secondary DESC, created_at DESC, type ASC, id ASC
 				LIMIT ? OFFSET ?`
 			countSQL := `
 				SELECT
@@ -681,6 +681,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 				Order("COALESCE(courses.resource_count, 0) DESC").
 				Order("COALESCE(courses.download_total, 0) DESC").
 				Order("courses.created_at DESC").
+				Order("courses.id ASC").
 				Offset(offset).Limit(size).Scan(&items).Error
 
 			if err != nil {
@@ -709,6 +710,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 			err := base.Select(`'course' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`).
 				Order("COALESCE(eval_count, 0) DESC").
 				Order("created_at DESC").
+				Order("id ASC").
 				Offset(offset).Limit(size).Scan(&items).Error
 			for i := range items {
 				items[i].DetailPath = CourseDetailPath(items[i].ID)
@@ -727,6 +729,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 			err := base.Select(`'teacher' AS type, id, '' AS title, name, '' AS subtitle, '' AS detail_path, '' AS resource_collection_path`).
 				Order("COALESCE(eval_count, 0) DESC").
 				Order("created_at DESC").
+				Order("id ASC").
 				Offset(offset).Limit(size).Scan(&items).Error
 			for i := range items {
 				items[i].DetailPath = TeacherDetailPath(items[i].ID)
@@ -783,7 +786,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 					0 AS metric_secondary
 				FROM teachers WHERE status = 'active' AND name ILIKE ?
 			) AS search_results
-			ORDER BY metric_primary DESC, metric_secondary DESC, created_at DESC
+			ORDER BY metric_primary DESC, metric_secondary DESC, created_at DESC, type ASC, id ASC
 			LIMIT ? OFFSET ?`
 		var sqlArgs []interface{}
 		if relevanceFirst {
@@ -848,7 +851,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 						END AS relevance_score
 					FROM teachers WHERE status = 'active' AND name ILIKE ?
 				) AS search_results
-				ORDER BY relevance_score DESC, metric_primary DESC, metric_secondary DESC, created_at DESC
+				ORDER BY relevance_score DESC, metric_primary DESC, metric_secondary DESC, created_at DESC, type ASC, id ASC
 				LIMIT ? OFFSET ?`
 			sqlArgs = []interface{}{
 				trimmedQ, prefixLike, like, trimmedQ, like,
@@ -945,6 +948,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 			Order("COALESCE(courses.resource_count, 0) DESC").
 			Order("COALESCE(courses.download_total, 0) DESC").
 			Order("courses.created_at DESC").
+			Order("courses.id ASC").
 			Offset(offset).Limit(size).Scan(&items).Error
 
 		if err != nil {
@@ -993,6 +997,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 		err := query.
 			Order("COALESCE(eval_count, 0) DESC").
 			Order("created_at DESC").
+			Order("id ASC").
 			Offset(offset).
 			Limit(size).
 			Scan(&items).Error
@@ -1033,6 +1038,7 @@ func (r *miscRepository) Search(q, searchType string, page, size int, relevanceF
 		err := query.
 			Order("COALESCE(eval_count, 0) DESC").
 			Order("created_at DESC").
+			Order("id ASC").
 			Offset(offset).
 			Limit(size).
 			Scan(&items).Error

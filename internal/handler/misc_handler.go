@@ -282,6 +282,11 @@ func (h *MiscHandler) Search(c *gin.Context) {
 		failInternalWithLog(c, err)
 		return
 	}
+	// Avoid JSON "items": null for empty pages (nil Go slice) so clients can
+	// keep treating the payload as a unified {items, total} list.
+	if items == nil {
+		items = []repo.SearchResultItem{}
+	}
 	resp.Success(c, gin.H{"items": items, "total": total})
 }
 
