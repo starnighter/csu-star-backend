@@ -41,6 +41,19 @@ func mapNotFound(err error) error {
 	return err
 }
 
+// findOne uses Find+Limit instead of First so a miss does not emit GORM's
+// "record not found" error log (common on optional lookups like author/me).
+func findOne(db *gorm.DB, dest any) error {
+	res := db.Limit(1).Find(dest)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *GormStore) IsAuthor(userID int64) (bool, error) {
 	var n int64
 	err := s.db.Model(&model.CompassAuthor{}).Where("user_id = ?", userID).Count(&n).Error
@@ -80,9 +93,8 @@ func (s *GormStore) UpdateAuthorApplication(app *model.CompassAuthorApplication)
 
 func (s *GormStore) LatestAuthorApplication(userID int64) (*model.CompassAuthorApplication, error) {
 	var app model.CompassAuthorApplication
-	err := s.db.Where("user_id = ?", userID).Order("created_at desc").First(&app).Error
-	if err != nil {
-		return nil, mapNotFound(err)
+	if err := findOne(s.db.Where("user_id = ?", userID).Order("created_at desc"), &app); err != nil {
+		return nil, err
 	}
 	return &app, nil
 }
@@ -203,16 +215,17 @@ func (s *GormStore) GetCollection(id int64) (*model.CompassCollection, error) {
 
 func (s *GormStore) GetCollectionByRoot(rootPageID int64) (*model.CompassCollection, error) {
 	var c model.CompassCollection
-	if err := s.db.Where("root_page_id = ?", rootPageID).First(&c).Error; err != nil {
-		return nil, mapNotFound(err)
+	if err := findOne(s.db.Where("root_page_id = ?", rootPageID), &c); err != nil {
+		return nil, err
 	}
 	return &c, nil
 }
 
 func (s *GormStore) GetCourseRoot(courseID int64) (*model.CompassCourseRoot, error) {
 	var r model.CompassCourseRoot
-	if err := s.db.First(&r, courseID).Error; err != nil {
-		return nil, mapNotFound(err)
+	// First visit always misses until lazy-created — avoid noisy not-found logs.
+	if err := findOne(s.db.Where("course_id = ?", courseID), &r); err != nil {
+		return nil, err
 	}
 	return &r, nil
 }

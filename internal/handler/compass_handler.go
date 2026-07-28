@@ -78,12 +78,13 @@ func (h *CompassHandler) GetFeed(c *gin.Context) {
 }
 
 // GET /compass/pages/:id
+// Any logged-in user may read; can_write only reflects edit rights (owner/writer/reviewer).
 func (h *CompassHandler) GetPage(c *gin.Context) {
 	id, ok := parseIDParam(c, "id")
 	if !ok {
 		return
 	}
-	page, canWrite, err := h.svc.GetPage(h.userID(c), id)
+	page, canWrite, err := h.svc.GetPage(h.userID(c), h.userRole(c), id)
 	if err != nil {
 		h.mapErr(c, err)
 		return

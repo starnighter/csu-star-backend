@@ -160,7 +160,9 @@ func (s *CompassService) GetFeed(userID int64, tab, contentType string, limit in
 	return s.store.ListFeed(tab, contentType, limit)
 }
 
-func (s *CompassService) GetPage(userID, pageID int64) (*model.CompassPage, bool, error) {
+// GetPage returns a page for any authenticated user (read).
+// canWrite is true only for owner / page writer / admin|auditor — never required to read.
+func (s *CompassService) GetPage(userID int64, role string, pageID int64) (*model.CompassPage, bool, error) {
 	if err := requireUser(userID); err != nil {
 		return nil, false, err
 	}
@@ -175,9 +177,10 @@ func (s *CompassService) GetPage(userID, pageID int64) (*model.CompassPage, bool
 	if err := s.store.IncrementViewCount(pageID); err == nil {
 		page.ViewCount++
 	}
-	canWrite, err := s.CanWrite(userID, "", page)
+	canWrite, err := s.CanWrite(userID, role, page)
 	if err != nil {
-		return nil, false, err
+		// Writer lookup failure must not block read access.
+		return page, false, nil
 	}
 	return page, canWrite, nil
 }

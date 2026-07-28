@@ -21,7 +21,7 @@ func TestUnauthenticatedFeedDenied(t *testing.T) {
 
 func TestUnauthenticatedPageBodyDenied(t *testing.T) {
 	svc := newTestCompass()
-	_, _, err := svc.GetPage(0, 1)
+	_, _, err := svc.GetPage(0, string(model.UserRoleUser), 1)
 	if !errors.Is(err, ErrCompassUnauthorized) {
 		t.Fatalf("expected unauthorized, got %v", err)
 	}
@@ -219,13 +219,13 @@ func TestHotFeedOrdersByScore(t *testing.T) {
 	p2, _ := svc.CreateEssay(author, CreateEssayInput{Title: "hot", Body: "h"})
 
 	// inflate hot on p2 via views
-	page2, can, err := svc.GetPage(author, p2.ID)
+	page2, can, err := svc.GetPage(author, string(model.UserRoleUser), p2.ID)
 	if err != nil || !can {
 		t.Fatalf("get p2: %v can=%v", err, can)
 	}
 	// extra views
 	for i := 0; i < 5; i++ {
-		_, _, _ = svc.GetPage(author, p2.ID)
+		_, _, _ = svc.GetPage(author, string(model.UserRoleUser), p2.ID)
 	}
 	_ = page2
 	_ = p1
@@ -342,7 +342,7 @@ func TestGetPageViewBumpDoesNotClobberBodyUnderConcurrentWrites(t *testing.T) {
 	// flood GetPage (view increments)
 	go func() {
 		for i := 0; i < 80; i++ {
-			_, _, _ = svc.GetPage(uid, page.ID)
+			_, _, _ = svc.GetPage(uid, string(model.UserRoleUser), page.ID)
 		}
 		close(done)
 	}()
@@ -359,7 +359,7 @@ func TestGetPageViewBumpDoesNotClobberBodyUnderConcurrentWrites(t *testing.T) {
 
 	// Read without relying on GetPage view side effects for body check:
 	// one final GetPage after writers finish.
-	got, _, err := svc.GetPage(uid, page.ID)
+	got, _, err := svc.GetPage(uid, string(model.UserRoleUser), page.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,4 +390,34 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return string(b[pos:])
+}
+
+// Non-owners without write grant can still read body; can_write is false.
+func TestLoggedInUserCanReadWithoutWritePermission(t *testing.T) {
+	svc := newTestCompass()
+	const owner int64 = 501
+	const reader int64 = 502
+	app, _ := svc.ApplyAuthor(owner, "o")
+	_, _ = svc.ReviewAuthorApplication(1, string(model.UserRoleAdmin), app.ID, true, "")
+	page, err := svc.CreateEssay(owner, CreateEssayInput{Title: "public essay", Body: "readable body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, canWrite, err := svc.GetPage(reader, string(model.UserRoleUser), page.ID)
+	if err != nil {
+		t.Fatalf("reader should read without author/write: %v", err)
+	}
+	if canWrite {
+		t.Fatal("reader must not have write")
+	}
+	if got.Body != "readable body" {
+		t.Fatalf("body want readable body, got %q", got.Body)
+	}
+
+	// history is also readable
+	hist, err := svc.ListHistory(reader, page.ID)
+	if err != nil || len(hist) == 0 {
+		t.Fatalf("reader should list history: %v len=%d", err, len(hist))
+	}
 }
