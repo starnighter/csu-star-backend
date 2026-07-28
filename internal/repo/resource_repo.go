@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"errors"
 	"net"
 	"strconv"
@@ -474,6 +475,7 @@ func (r *resourceRepository) FindDownloadFile(resourceID, fileID int64) (*Downlo
 
 func (r *resourceRepository) DownloadResource(userID, resourceID int64, ip net.IP, pointsCost int) (*ResourceDownloadResult, error) {
 	result := &ResourceDownloadResult{}
+	var createdNotification *model.Notifications
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var user model.Users
@@ -514,7 +516,7 @@ func (r *resourceRepository) DownloadResource(userID, resourceID int64, ip net.I
 				return err
 			}
 
-			if err := tx.Create(&model.Notifications{
+			notification := &model.Notifications{
 				UserID:    userID,
 				Type:      model.NotificationPointsChanged,
 				Category:  model.NotificationCategoryPoints,
@@ -524,9 +526,11 @@ func (r *resourceRepository) DownloadResource(userID, resourceID int64, ip net.I
 				RelatedID: resourceID,
 				IsRead:    true,
 				IsGlobal:  false,
-			}).Error; err != nil {
+			}
+			if err := tx.Create(notification).Error; err != nil {
 				return err
 			}
+			createdNotification = notification
 		}
 
 		downloadRecord := model.DownloadRecords{
@@ -550,6 +554,9 @@ func (r *resourceRepository) DownloadResource(userID, resourceID int64, ip net.I
 	})
 	if err != nil {
 		return nil, err
+	}
+	if createdNotification != nil {
+		realtime.PublishNewNotification(createdNotification)
 	}
 
 	return result, nil

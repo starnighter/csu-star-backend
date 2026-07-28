@@ -4,9 +4,9 @@ import (
 	"context"
 	"csu-star-backend/config"
 	"csu-star-backend/internal/repo"
-	"csu-star-backend/internal/service"
 	"csu-star-backend/internal/task"
 	"csu-star-backend/logger"
+	"csu-star-backend/pkg/mailer"
 	"csu-star-backend/pkg/utils"
 	"csu-star-backend/router"
 	"errors"
@@ -110,6 +110,12 @@ func main() {
 	if err := ensureUserContributionTable(db); err != nil {
 		logger.Log.Error("补齐用户贡献值表失败：", zap.Error(err))
 	}
+	if err := ensureUserStudentID(db); err != nil {
+		logger.Log.Error("补齐用户学号字段失败：", zap.Error(err))
+	}
+	if err := ensureMailProvidersTable(db); err != nil {
+		logger.Log.Error("补齐邮件通道表失败：", zap.Error(err))
+	}
 
 	// 初始化OAuth Client
 	oauthClient := utils.NewHttpClient(10*time.Second, 100)
@@ -119,8 +125,16 @@ func main() {
 	if err != nil {
 		logger.Log.Fatal("腾讯云COS客户端初始化失败，服务退出", zap.Error(err))
 	}
-	if !utils.HasVerificationEmailFallbackProvider() {
-		logger.Log.Error("验证码邮件SMTP通道不可用：未配置可用的SMTP provider")
+	// 邮件配置自检保持非致命：邮件不可用不应该让 API 停止提供读服务。
+	// 注意此时通道来源尚未注册（在 SetUpRouter 里 Install），所以这里看到的是
+	// config.yaml 的兜底通道；管理端配置的通道由后台页面自行展示自检结果。
+	if mailErrs, mailWarns := mailer.ValidateConfig(); len(mailErrs) > 0 || len(mailWarns) > 0 {
+		for _, msg := range mailErrs {
+			logger.Log.Error("邮件配置异常：" + msg)
+		}
+		for _, msg := range mailWarns {
+			logger.Log.Warn("邮件配置提醒：" + msg)
+		}
 	}
 
 	// 初始化路由及依赖配置
@@ -138,12 +152,6 @@ func main() {
 	appCtx, cancelBackgroundTasks := context.WithCancel(context.Background())
 	scheduler := task.NewScheduler(db, aggregateRepo, courseRepo, teacherRepo, miscRepo)
 	scheduler.Start(appCtx)
-
-	// 初始化邮箱注册轮询服务
-	userRepo := repo.NewUserRepository(db)
-	emailRegSvc := service.NewEmailRegisterService(userRepo)
-	emailRegPoller := task.NewEmailRegisterPoller(emailRegSvc)
-	emailRegPoller.Start(appCtx)
 
 	// 配置HTTP Sever
 	addr := fmt.Sprintf("%s:%v", resolveBindHost(globalCfg.Server.BindHost), globalCfg.Server.Port)
@@ -442,6 +450,84 @@ func ensureUserContributionTable(db *gorm.DB) error {
 		INSERT INTO user_contributions (user_id)
 		SELECT id FROM users
 		ON CONFLICT (user_id) DO NOTHING;
+	`).Error
+}
+
+// ensureUserStudentID 为 users 补上学号字段，并从存量校园邮箱回填。
+//
+// 邮箱域名放开后，学号不再能从邮箱前缀推导，必须成为独立字段。本次只建字段
+// 和回填，不提供任何写接口——绑定流程是后续独立的一步。
+func ensureUserStudentID(db *gorm.DB) error {
+	return db.Exec(`
+		ALTER TABLE users
+			ADD COLUMN IF NOT EXISTS student_id VARCHAR(32),
+			ADD COLUMN IF NOT EXISTS student_id_source VARCHAR(16) DEFAULT '';
+
+		-- ROW_NUMBER 去重不是多余的：users.email 虽有 UNIQUE，但 Postgres 唯一索引
+		-- 大小写敏感，12345@csu.edu.cn 与 12345@CSU.EDU.CN 可以共存，两条都会回填成
+		-- 同一个学号从而炸掉下面的唯一索引。
+		-- 正则限定纯数字则是刻意跳过教工别名一类的非学号前缀，
+		-- 不往即将加唯一约束的列里写垃圾。
+		WITH candidates AS (
+			SELECT id,
+			       split_part(lower(email), '@', 1) AS sid,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY split_part(lower(email), '@', 1)
+			           ORDER BY created_at, id
+			       ) AS rn
+			FROM users
+			WHERE email IS NOT NULL
+			  AND lower(email) LIKE '%@csu.edu.cn'
+			  AND split_part(lower(email), '@', 1) ~ '^[0-9]{6,20}$'
+		)
+		UPDATE users
+		SET student_id = c.sid,
+		    student_id_source = 'campus_email'
+		FROM candidates c
+		WHERE users.id = c.id
+		  AND c.rn = 1
+		  AND users.student_id IS NULL;
+
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_users_student_id
+			ON users (student_id)
+			WHERE student_id IS NOT NULL;
+
+		-- 域名放开后大小写变体重复的风险变高。已存在重复时这句会失败，
+		-- 而 ensure* 的错误是非致命的——正是开放注册前想要的告警信号。
+		-- 刻意不自动把存量邮箱改小写：那可能与另一条合法记录碰撞、静默合并身份。
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower
+			ON users (lower(email))
+			WHERE email IS NOT NULL;
+	`).Error
+}
+
+// ensureMailProvidersTable 建立管理端可配置的邮件通道表。
+// 表为空时 mailer 会自动回落到 config.yaml 里的通道，因此可以先发二进制再配通道。
+func ensureMailProvidersTable(db *gorm.DB) error {
+	return db.Exec(`
+		CREATE TABLE IF NOT EXISTS mail_providers (
+			id              BIGINT PRIMARY KEY,
+			name            VARCHAR(64)  NOT NULL,
+			kind            VARCHAR(32)  NOT NULL DEFAULT 'custom_smtp',
+			host            VARCHAR(255) NOT NULL,
+			port            INTEGER      NOT NULL,
+			tls_mode        VARCHAR(16)  DEFAULT 'implicit',
+			username        VARCHAR(255) NOT NULL,
+			password        TEXT         NOT NULL,
+			from_email_addr VARCHAR(255) NOT NULL,
+			from_name       VARCHAR(64),
+			tier            INTEGER      NOT NULL DEFAULT 0,
+			enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+			last_ok_at      TIMESTAMPTZ,
+			last_err_at     TIMESTAMPTZ,
+			last_err        TEXT,
+			created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+			updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+			deleted_at      TIMESTAMPTZ
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_mail_providers_deleted_at ON mail_providers (deleted_at);
+		CREATE INDEX IF NOT EXISTS idx_mail_providers_enabled_tier ON mail_providers (enabled, tier);
 	`).Error
 }
 

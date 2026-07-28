@@ -257,6 +257,10 @@ func (h *MiscHandler) CreateCorrection(c *gin.Context) {
 			resp.FailWithCode(c, http.StatusNotFound, resp.CodeFail, "目标不存在")
 			return
 		}
+		if err == service.ErrSocialInvalidPayload {
+			resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, "纠错字段或建议值无效")
+			return
+		}
 		failInternalWithLog(c, err)
 		return
 	}
@@ -277,6 +281,11 @@ func (h *MiscHandler) Search(c *gin.Context) {
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
+	}
+	// Avoid JSON "items": null for empty pages (nil Go slice) so clients can
+	// keep treating the payload as a unified {items, total} list.
+	if items == nil {
+		items = []repo.SearchResultItem{}
 	}
 	resp.Success(c, gin.H{"items": items, "total": total})
 }
@@ -346,6 +355,7 @@ func (h *MiscHandler) ListSupplementRequests(c *gin.Context) {
 		return
 	}
 
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.miscSvc.ListSupplementRequests(repo.SupplementRequestListQuery{
 		Status:      r.Status,
 		RequestType: r.RequestType,
@@ -358,7 +368,7 @@ func (h *MiscHandler) ListSupplementRequests(c *gin.Context) {
 		return
 	}
 
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *MiscHandler) GetSupplementRequest(c *gin.Context) {

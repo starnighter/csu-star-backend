@@ -41,12 +41,13 @@ func (h *AdminHandler) ListReports(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListReports(r.Status, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) HandleReport(c *gin.Context) {
@@ -80,12 +81,13 @@ func (h *AdminHandler) ListCorrections(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListCorrections(r.Status, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) HandleCorrection(c *gin.Context) {
@@ -119,12 +121,13 @@ func (h *AdminHandler) ListFeedbacks(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListFeedbacks(r.Status, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) ReplyFeedback(c *gin.Context) {
@@ -156,12 +159,13 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListUsers(r.Status, r.Role, r.Keyword, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) ListUserViolations(c *gin.Context) {
@@ -174,12 +178,13 @@ func (h *AdminHandler) ListUserViolations(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListUserViolations(userID, int64(r.Page), int64(r.Size))
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) CreateUser(c *gin.Context) {
@@ -328,12 +333,13 @@ func (h *AdminHandler) ListAnnouncements(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListAnnouncements(r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) CreateAnnouncement(c *gin.Context) {
@@ -408,12 +414,13 @@ func (h *AdminHandler) ListCourses(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListCourses(r.Status, r.CourseType, r.Keyword, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) CreateCourse(c *gin.Context) {
@@ -565,12 +572,13 @@ func (h *AdminHandler) ListTeachers(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListTeachers(r.Status, r.Keyword, r.DepartmentID, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) CreateTeacher(c *gin.Context) {
@@ -734,12 +742,13 @@ func (h *AdminHandler) ListResources(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListResources(r.Status, r.Keyword, r.ResourceType, r.CourseID, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
 }
 
 func (h *AdminHandler) DeleteResource(c *gin.Context) {
@@ -775,12 +784,20 @@ func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
 		resp.FailWithCode(c, http.StatusBadRequest, resp.CodeFail, constant.BadRequestErr.Error())
 		return
 	}
+	req.NormalizePagination(&r.Page, &r.Size)
 	items, total, err := h.adminSvc.ListAuditLogs(r.Action, r.OperatorID, r.TargetType, r.Page, r.Size)
 	if err != nil {
 		failInternalWithLog(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"items": items, "total": total})
+	resp.Success(c, pageEnvelope(items, total, r.Page, r.Size))
+}
+
+// pageEnvelope 统一分页列表的返回体。回显 page/size 是必要的：
+// 服务端会把越界的 size 归一化，不回显的话客户端无从得知自己要的页大小没被采纳，
+// 会按错误的页大小配合 total 算出错误的总页数。
+func pageEnvelope(items any, total int64, page, size int) gin.H {
+	return gin.H{"items": items, "total": total, "page": page, "size": size}
 }
 
 func parsePositiveID(c *gin.Context) (int64, bool) {

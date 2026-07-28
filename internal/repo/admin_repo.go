@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"encoding/json"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type AdminReportItem struct {
 	UserID          int64                     `json:"user_id,string"`
 	User            *UserBrief                `json:"user,omitempty" gorm:"-"`
 	TargetPreview   *AdminReportTargetPreview `json:"target_preview,omitempty" gorm:"-"`
+	Processor       *UserBrief                `json:"processor,omitempty" gorm:"-"`
 	TargetType      string                    `json:"target_type"`
 	TargetID        int64                     `json:"target_id,string"`
 	Reason          string                    `json:"reason"`
@@ -63,31 +65,41 @@ type AdminReportTargetPreview struct {
 }
 
 type AdminCorrectionItem struct {
-	ID              int64      `json:"id,string"`
-	UserID          int64      `json:"user_id,string"`
-	User            *UserBrief `json:"user,omitempty" gorm:"-"`
-	TargetType      string     `json:"target_type"`
-	TargetID        int64      `json:"target_id,string"`
-	Field           string     `json:"field"`
-	SuggestedValue  string     `json:"suggested_value"`
-	Status          string     `json:"status"`
-	ProcessorID     *int64     `json:"processor_id,omitempty,string"`
-	ProcessAt       *time.Time `json:"processed_at,omitempty"`
-	ProcessNote     string     `json:"process_note"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	UserNickname    string     `json:"-" gorm:"column:user_nickname"`
-	UserAvatarURL   string     `json:"-" gorm:"column:user_avatar_url"`
-	UserRole        string     `json:"-" gorm:"column:user_role"`
-	ProcessorName   string     `json:"-" gorm:"column:processor_name"`
-	ProcessorAvatar string     `json:"-" gorm:"column:processor_avatar"`
-	ProcessorRole   string     `json:"-" gorm:"column:processor_role"`
+	ID         int64      `json:"id,string"`
+	UserID     int64      `json:"user_id,string"`
+	User       *UserBrief `json:"user,omitempty" gorm:"-"`
+	Processor  *UserBrief `json:"processor,omitempty" gorm:"-"`
+	TargetType string     `json:"target_type"`
+	TargetID   int64      `json:"target_id,string"`
+	Field      string     `json:"field"`
+	// CurrentValue 是纠错目标当前的字段值，供审核员对比「改成什么」之前先看到「原本是什么」。
+	// 取值逻辑必须与 service.applyCourseCorrection / applyTeacherCorrection 的 field switch 保持一致。
+	CurrentValue string `json:"current_value"`
+	// CurrentValueDisplay / SuggestedValueDisplay 仅在字段本身是外键（当前只有 department_id）时非空，
+	// 用于把裸 ID 翻译成可读名称，否则审核员看到的是两个无意义的数字。
+	CurrentValueDisplay   string     `json:"current_value_display,omitempty"`
+	SuggestedValue        string     `json:"suggested_value"`
+	SuggestedValueDisplay string     `json:"suggested_value_display,omitempty"`
+	TargetMissing         bool       `json:"target_missing,omitempty"`
+	Status                string     `json:"status"`
+	ProcessorID           *int64     `json:"processor_id,omitempty,string"`
+	ProcessAt             *time.Time `json:"processed_at,omitempty"`
+	ProcessNote           string     `json:"process_note"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+	UserNickname          string     `json:"-" gorm:"column:user_nickname"`
+	UserAvatarURL         string     `json:"-" gorm:"column:user_avatar_url"`
+	UserRole              string     `json:"-" gorm:"column:user_role"`
+	ProcessorName         string     `json:"-" gorm:"column:processor_name"`
+	ProcessorAvatar       string     `json:"-" gorm:"column:processor_avatar"`
+	ProcessorRole         string     `json:"-" gorm:"column:processor_role"`
 }
 
 type AdminFeedbackItem struct {
 	ID             int64          `json:"id,string"`
 	UserID         int64          `json:"user_id,string"`
 	User           *UserBrief     `json:"user,omitempty" gorm:"-"`
+	Replier        *UserBrief     `json:"replier,omitempty" gorm:"-"`
 	Type           string         `json:"type"`
 	Title          string         `json:"title"`
 	Content        string         `json:"content"`
@@ -102,11 +114,15 @@ type AdminFeedbackItem struct {
 	UserNickname   string         `json:"-" gorm:"column:user_nickname"`
 	UserAvatarURL  string         `json:"-" gorm:"column:user_avatar_url"`
 	UserRole       string         `json:"-" gorm:"column:user_role"`
+	ReplierName    string         `json:"-" gorm:"column:replier_name"`
+	ReplierAvatar  string         `json:"-" gorm:"column:replier_avatar"`
+	ReplierRole    string         `json:"-" gorm:"column:replier_role"`
 }
 
 type AdminUserItem struct {
 	ID                int64      `json:"id,string"`
 	Email             *string    `json:"email,omitempty"`
+	StudentID         *string    `json:"student_id,omitempty"`
 	Nickname          string     `json:"nickname"`
 	AvatarURL         string     `json:"avatar_url"`
 	Role              string     `json:"role"`
@@ -151,18 +167,18 @@ type AdminAnnouncementItem struct {
 }
 
 type AdminCourseItem struct {
-	ID            int64      `json:"id,string"`
-	Name          string     `json:"name"`
-	CourseType    string     `json:"course_type"`
-	Description   string     `json:"description"`
-	Credits       float64    `json:"credits"`
-	ResourceCount int        `json:"resource_count"`
-	EvalCount     int        `json:"eval_count"`
-	FavoriteCount int        `json:"favorite_count"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty" gorm:"-"`
+	ID            int64     `json:"id,string"`
+	Name          string    `json:"name"`
+	CourseType    string    `json:"course_type"`
+	Description   string    `json:"description"`
+	Credits       float64   `json:"credits"`
+	ResourceCount int       `json:"resource_count"`
+	EvalCount     int       `json:"eval_count"`
+	FavoriteCount int       `json:"favorite_count"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	// 课程是「改 status」的软删除，表里没有 deleted_at 列，判断删除请用 status == "deleted"。
 }
 
 type AdminTeacherItem struct {
@@ -223,12 +239,15 @@ type AdminResourceItem struct {
 }
 
 type AdminAuditLogItem struct {
-	ID             int64          `json:"id,string"`
-	OperatorID     int64          `json:"operator_id,string"`
-	Operator       *UserBrief     `json:"operator,omitempty" gorm:"-"`
-	Action         string         `json:"action"`
-	TargetType     string         `json:"target_type"`
-	TargetID       int64          `json:"target_id,string"`
+	ID         int64      `json:"id,string"`
+	OperatorID int64      `json:"operator_id,string"`
+	Operator   *UserBrief `json:"operator,omitempty" gorm:"-"`
+	Action     string     `json:"action"`
+	TargetType string     `json:"target_type"`
+	TargetID   int64      `json:"target_id,string"`
+	// TargetName 由 hydrateAuditTargetNames 按 target_type 批量回填；
+	// 对 report/correction/feedback/notification/relation 这类本身没有名称的对象为空。
+	TargetName     string         `json:"target_name,omitempty" gorm:"-"`
 	OldValues      datatypes.JSON `json:"old_values"`
 	NewValues      datatypes.JSON `json:"new_values"`
 	Reason         string         `json:"reason"`
@@ -256,6 +275,9 @@ type AdminRepository interface {
 	AdjustUserPoints(userID int64, delta int, reason string) (int, error)
 	ListAnnouncements(page, size int) ([]AdminAnnouncementItem, int64, error)
 	CreateAnnouncement(item *model.Announcements) error
+	GetAdminAnnouncementItem(id int64) (*AdminAnnouncementItem, error)
+	GetAdminCourseItem(id int64) (*AdminCourseItem, error)
+	GetAdminTeacherItem(id int64) (*AdminTeacherItem, error)
 	GetAnnouncementByID(id int64) (*model.Announcements, error)
 	UpdateAnnouncement(item *model.Announcements) error
 	DeleteAnnouncement(id int64) error
@@ -360,6 +382,7 @@ func (r *adminRepository) ListReports(status string, page, size int) ([]AdminRep
 	}
 	for i := range items {
 		hydrateAdminUserBrief(&items[i].User, items[i].UserID, items[i].UserNickname, items[i].UserAvatarURL, items[i].UserRole)
+		hydrateOptionalUserBrief(&items[i].Processor, items[i].ProcessorID, items[i].ProcessorName, items[i].ProcessorAvatar, items[i].ProcessorRole)
 		items[i].TargetPreview, err = r.getReportTargetPreview(items[i].TargetType, items[i].TargetID)
 		if err != nil {
 			return nil, 0, err
@@ -380,6 +403,30 @@ func (r *adminRepository) UpdateReport(report *model.Reports) error {
 	return r.db.Save(report).Error
 }
 
+// correctionCurrentValueSQL 取出纠错目标当前的字段值，让审核员能看到「原本是什么 → 要改成什么」。
+// 字段清单必须覆盖 model.CorrectionFieldsByTargetType，
+// 由 TestCorrectionCurrentValueSQLCoversAllFields 守卫，漏一个就会在这里静默返回空字符串。
+const correctionCurrentValueSQL = `,
+			CASE
+				WHEN corrections.target_type = 'course' THEN CASE corrections.field
+					WHEN 'name'        THEN COALESCE(cc.name, '')
+					WHEN 'description' THEN COALESCE(cc.description, '')
+					WHEN 'course_type' THEN COALESCE(cc.course_type::text, '')
+					ELSE '' END
+				WHEN corrections.target_type = 'teacher' THEN CASE corrections.field
+					WHEN 'name'          THEN COALESCE(tt.name, '')
+					WHEN 'title'         THEN COALESCE(tt.title, '')
+					WHEN 'avatar_url'    THEN COALESCE(tt.avatar_url, '')
+					WHEN 'department_id' THEN COALESCE(tt.department_id::text, '')
+					WHEN 'bio'           THEN COALESCE(tt.metadata->>'bio', '')
+					WHEN 'tutor_type'    THEN COALESCE(tt.metadata->>'tutor_type', '')
+					WHEN 'homepage_url'  THEN COALESCE(tt.metadata->>'homepage_url', '')
+					ELSE '' END
+				ELSE '' END AS current_value,
+			COALESCE(cur_dept.name, '') AS current_value_display,
+			COALESCE(sug_dept.name, '') AS suggested_value_display,
+			(cc.id IS NULL AND tt.id IS NULL) AS target_missing`
+
 func (r *adminRepository) ListCorrections(status string, page, size int) ([]AdminCorrectionItem, int64, error) {
 	var items []AdminCorrectionItem
 	var total int64
@@ -393,6 +440,13 @@ func (r *adminRepository) ListCorrections(status string, page, size int) ([]Admi
 	err := base.
 		Joins("JOIN users reporter ON reporter.id = corrections.user_id").
 		Joins("LEFT JOIN users processor ON processor.id = corrections.processor_id").
+		// 按 target_type 守卫的两条 JOIN：一条纠错只会命中其中一张表，另一张恒为 NULL。
+		Joins("LEFT JOIN courses cc ON corrections.target_type = 'course' AND cc.id = corrections.target_id").
+		Joins("LEFT JOIN teachers tt ON corrections.target_type = 'teacher' AND tt.id = corrections.target_id").
+		Joins("LEFT JOIN departments cur_dept ON cur_dept.id = tt.department_id").
+		// 用 id::text = suggested_value 而不是反向 cast：suggested_value 是自由文本，
+		// 反向 cast 遇到非数字会让整条查询报错。
+		Joins("LEFT JOIN departments sug_dept ON corrections.field = 'department_id' AND sug_dept.id::text = corrections.suggested_value").
 		Select(`
 			corrections.id,
 			corrections.user_id,
@@ -411,7 +465,7 @@ func (r *adminRepository) ListCorrections(status string, page, size int) ([]Admi
 			reporter.role::text AS user_role,
 			COALESCE(processor.nickname, '') AS processor_name,
 			COALESCE(processor.avatar_url, '') AS processor_avatar,
-			COALESCE(processor.role::text, '') AS processor_role`).
+			COALESCE(processor.role::text, '') AS processor_role` + correctionCurrentValueSQL).
 		Order("corrections.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -421,6 +475,12 @@ func (r *adminRepository) ListCorrections(status string, page, size int) ([]Admi
 	}
 	for i := range items {
 		hydrateAdminUserBrief(&items[i].User, items[i].UserID, items[i].UserNickname, items[i].UserAvatarURL, items[i].UserRole)
+		hydrateOptionalUserBrief(&items[i].Processor, items[i].ProcessorID, items[i].ProcessorName, items[i].ProcessorAvatar, items[i].ProcessorRole)
+		// *_display 只对指向其它表的字段有意义，其余字段清空避免误导前端。
+		if items[i].Field != "department_id" {
+			items[i].CurrentValueDisplay = ""
+			items[i].SuggestedValueDisplay = ""
+		}
 	}
 	return items, total, nil
 }
@@ -449,6 +509,7 @@ func (r *adminRepository) ListFeedbacks(status string, page, size int) ([]AdminF
 	}
 	err := base.
 		Joins("JOIN users reporter ON reporter.id = feedbacks.user_id").
+		Joins("LEFT JOIN users replier ON replier.id = feedbacks.replied_by").
 		Select(`
 			feedbacks.id,
 			feedbacks.user_id,
@@ -464,7 +525,10 @@ func (r *adminRepository) ListFeedbacks(status string, page, size int) ([]AdminF
 			feedbacks.updated_at,
 			reporter.nickname AS user_nickname,
 			reporter.avatar_url AS user_avatar_url,
-			reporter.role::text AS user_role`).
+			reporter.role::text AS user_role,
+			COALESCE(replier.nickname, '') AS replier_name,
+			COALESCE(replier.avatar_url, '') AS replier_avatar,
+			COALESCE(replier.role::text, '') AS replier_role`).
 		Order("feedbacks.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -474,6 +538,7 @@ func (r *adminRepository) ListFeedbacks(status string, page, size int) ([]AdminF
 	}
 	for i := range items {
 		hydrateAdminUserBrief(&items[i].User, items[i].UserID, items[i].UserNickname, items[i].UserAvatarURL, items[i].UserRole)
+		hydrateOptionalUserBrief(&items[i].Replier, items[i].RepliedBy, items[i].ReplierName, items[i].ReplierAvatar, items[i].ReplierRole)
 		if len(items[i].RawAttachments) > 0 {
 			_ = json.Unmarshal(items[i].RawAttachments, &items[i].Attachments)
 		}
@@ -505,13 +570,13 @@ func (r *adminRepository) ListUsers(status, role, keyword string, page, size int
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		base = base.Where("users.nickname ILIKE ? OR COALESCE(users.email, '') ILIKE ?", like, like)
+		base = base.Where("users.nickname ILIKE ? OR COALESCE(users.email, '') ILIKE ? OR COALESCE(users.student_id, '') ILIKE ?", like, like, like)
 	}
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	err := base.
-		Select("id, email, nickname, avatar_url, role, status, ban_until, ban_reason, ban_source, violation_count, last_violation_at, email_verified, points, free_download_count, last_login_at, created_at, updated_at").
+		Select("id, email, student_id, nickname, avatar_url, role, status, ban_until, ban_reason, ban_source, violation_count, last_violation_at, email_verified, points, free_download_count, last_login_at, created_at, updated_at").
 		Order("users.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -581,7 +646,7 @@ func (r *adminRepository) ListAnnouncements(page, size int) ([]AdminAnnouncement
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select("id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at, deleted_at").
+	err := base.Select(adminAnnouncementItemColumns).
 		Order("is_pinned DESC").
 		Order("created_at DESC").
 		Offset((page - 1) * size).
@@ -626,7 +691,7 @@ func (r *adminRepository) ListCourses(status, courseType, keyword string, page, 
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select("id, name, course_type, description, credits, resource_count, eval_count, favorite_count, status, created_at, updated_at").
+	err := base.Select(adminCourseItemColumns).
 		Order("courses.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -686,21 +751,7 @@ func (r *adminRepository) ListTeachers(status, keyword string, departmentID *int
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := base.Select(`
-		teachers.id,
-		teachers.name,
-		teachers.title,
-		teachers.department_id,
-		COALESCE(departments.name, '') AS department_name,
-		teachers.avatar_url,
-		COALESCE(teachers.metadata->>'bio', '') AS bio,
-		COALESCE(teachers.metadata->>'tutor_type', '') AS tutor_type,
-		COALESCE(teachers.metadata->>'homepage_url', '') AS homepage_url,
-		teachers.favorite_count,
-		teachers.eval_count,
-		teachers.status,
-		teachers.created_at,
-		teachers.updated_at`).
+	err := base.Select(adminTeacherItemColumns).
 		Order("teachers.created_at DESC").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -746,9 +797,14 @@ func (r *adminRepository) ListTeacherRelations(teacherID int64) ([]AdminTeacherR
 func (r *adminRepository) ListResources(status, keyword, resourceType string, courseID int64, page, size int) ([]AdminResourceItem, int64, error) {
 	var items []AdminResourceItem
 	var total int64
+	// 用 LEFT JOIN 而非 INNER JOIN 纯粹是防御性的：
+	// 当前 resources.course_id / uploader_id 都有外键约束，且课程与用户都是软删除，
+	// 所以孤儿资源不可能出现，两种写法结果一致（已在本地库核对过 190 == 190）。
+	// 但外键没有 ON DELETE 行为，一旦将来迁移改成级联删除，INNER JOIN 会让孤儿资源
+	// 同时从 items 和 total 中静默消失——管理员无从发现，也就无法清理。
 	base := r.db.Table("resources").
-		Joins("JOIN courses ON courses.id = resources.course_id").
-		Joins("JOIN users ON users.id = resources.uploader_id")
+		Joins("LEFT JOIN courses ON courses.id = resources.course_id").
+		Joins("LEFT JOIN users ON users.id = resources.uploader_id")
 	if status != "" {
 		base = base.Where("resources.status = ?", status)
 	}
@@ -769,9 +825,9 @@ func (r *adminRepository) ListResources(status, keyword, resourceType string, co
 		resources.id,
 		resources.title,
 		resources.course_id,
-		courses.name AS course_name,
+		COALESCE(courses.name, '') AS course_name,
 		resources.uploader_id,
-		users.nickname AS uploader_name,
+		COALESCE(users.nickname, '') AS uploader_name,
 		resources.type AS resource_type,
 		resources.status,
 		resources.download_count AS downloads,
@@ -843,7 +899,67 @@ func (r *adminRepository) ListAuditLogs(action string, operatorID int64, targetT
 	for i := range items {
 		hydrateAdminUserBrief(&items[i].Operator, items[i].OperatorID, items[i].OperatorName, items[i].OperatorAvatar, items[i].OperatorRole)
 	}
+	if err := r.hydrateAuditTargetNames(items); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
+}
+
+// auditTargetNameSources 把 target_type 映射到「去哪张表、取哪一列当名称」。
+// 未列出的类型（report / correction / feedback / notification / course_teacher_relation）
+// 本身没有可读名称，保持 target_name 为空即可。
+var auditTargetNameSources = map[string]struct{ table, column string }{
+	"announcement": {"announcements", "title"},
+	"course":       {"courses", "name"},
+	"teacher":      {"teachers", "name"},
+	"user":         {"users", "nickname"},
+	"resource":     {"resources", "title"},
+}
+
+// hydrateAuditTargetNames 按 target_type 分组后每组一条 IN 查询回填名称。
+// 必须批量：审计日志一页最多 50 行，逐行查会变成 50 次往返。
+func (r *adminRepository) hydrateAuditTargetNames(items []AdminAuditLogItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	idsByType := make(map[string][]int64)
+	for i := range items {
+		if _, ok := auditTargetNameSources[items[i].TargetType]; !ok || items[i].TargetID == 0 {
+			continue
+		}
+		idsByType[items[i].TargetType] = append(idsByType[items[i].TargetType], items[i].TargetID)
+	}
+	if len(idsByType) == 0 {
+		return nil
+	}
+
+	names := make(map[string]map[int64]string, len(idsByType))
+	for targetType, ids := range idsByType {
+		source := auditTargetNameSources[targetType]
+		var rows []struct {
+			ID   int64
+			Name string
+		}
+		err := r.db.Table(source.table).
+			Select("id, COALESCE("+source.column+", '') AS name").
+			Where("id IN ?", ids).
+			Scan(&rows).Error
+		if err != nil {
+			return err
+		}
+		lookup := make(map[int64]string, len(rows))
+		for _, row := range rows {
+			lookup[row.ID] = row.Name
+		}
+		names[targetType] = lookup
+	}
+
+	for i := range items {
+		if lookup, ok := names[items[i].TargetType]; ok {
+			items[i].TargetName = lookup[items[i].TargetID]
+		}
+	}
+	return nil
 }
 
 func (r *adminRepository) CreateAuditLog(log *model.AuditLogs) error {
@@ -851,12 +967,102 @@ func (r *adminRepository) CreateAuditLog(log *model.AuditLogs) error {
 }
 
 func (r *adminRepository) CreateNotification(notification *model.Notifications) error {
-	return r.db.Create(notification).Error
+	if err := r.db.Create(notification).Error; err != nil {
+		return err
+	}
+	realtime.PublishNewNotification(notification)
+	return nil
+}
+
+/*
+ * 列表与「创建/更新后回读」共用同一套 SELECT。
+ *
+ * 此前 create/update 直接返回原始 GORM model，字段集与列表 DTO 不一致：
+ * teacher 的 bio/tutor_type/homepage_url 只在列表里有（从 metadata 拍平），
+ * course.code 只在 create/update 里有，公告的 expires_at 在 create 时还会返回
+ * 零值 "0001-01-01T00:00:00Z" 而列表里是直接省略——同一条记录两种表示。
+ */
+const adminCourseItemColumns = "id, name, course_type, description, credits, resource_count, eval_count, favorite_count, status, created_at, updated_at"
+
+const adminAnnouncementItemColumns = "id, title, content, type, is_pinned, is_published, published_at, expires_at, created_at, updated_at, deleted_at"
+
+const adminTeacherItemColumns = `
+		teachers.id,
+		teachers.name,
+		teachers.title,
+		teachers.department_id,
+		COALESCE(departments.name, '') AS department_name,
+		teachers.avatar_url,
+		COALESCE(teachers.metadata->>'bio', '') AS bio,
+		COALESCE(teachers.metadata->>'tutor_type', '') AS tutor_type,
+		COALESCE(teachers.metadata->>'homepage_url', '') AS homepage_url,
+		teachers.favorite_count,
+		teachers.eval_count,
+		teachers.status,
+		teachers.created_at,
+		teachers.updated_at`
+
+func (r *adminRepository) GetAdminCourseItem(id int64) (*AdminCourseItem, error) {
+	var item AdminCourseItem
+	err := r.db.Table("courses").Where("id = ?", id).Select(adminCourseItemColumns).Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
+}
+
+func (r *adminRepository) GetAdminTeacherItem(id int64) (*AdminTeacherItem, error) {
+	var item AdminTeacherItem
+	err := r.db.Table("teachers").
+		Joins("LEFT JOIN departments ON departments.id = teachers.department_id").
+		Where("teachers.id = ?", id).
+		Select(adminTeacherItemColumns).
+		Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
+}
+
+func (r *adminRepository) GetAdminAnnouncementItem(id int64) (*AdminAnnouncementItem, error) {
+	var item AdminAnnouncementItem
+	// Unscoped：软删除的公告也要能回读，否则删除后无法确认结果
+	err := r.db.Unscoped().Table("announcements").Where("id = ?", id).
+		Select(adminAnnouncementItemColumns).Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &item, nil
 }
 
 func hydrateAdminUserBrief(target **UserBrief, id int64, nickname, avatarURL, role string) {
 	*target = &UserBrief{
 		ID:        id,
+		Nickname:  nickname,
+		AvatarURL: avatarURL,
+		Role:      role,
+	}
+}
+
+// hydrateOptionalUserBrief 用于处理人 / 回复人这类可空的关联用户。
+// 与 hydrateAdminUserBrief 的区别是：id 为空时把指针置 nil，让 JSON 直接省略该字段，
+// 而不是输出 {"id":"0","nickname":""} —— 后者会让前端把「尚未处理」渲染成一个空白的处理人。
+func hydrateOptionalUserBrief(target **UserBrief, id *int64, nickname, avatarURL, role string) {
+	if id == nil || *id == 0 {
+		*target = nil
+		return
+	}
+	*target = &UserBrief{
+		ID:        *id,
 		Nickname:  nickname,
 		AvatarURL: avatarURL,
 		Role:      role,

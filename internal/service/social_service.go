@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	ErrSocialTargetNotFound = errors.New("social target not found")
+	ErrSocialTargetNotFound   = errors.New("social target not found")
+	ErrSocialInvalidPayload   = errors.New("social invalid payload")
 	ErrAlreadyLiked         = errors.New("already liked")
 	ErrAlreadyFavorited     = errors.New("already favorited")
 )

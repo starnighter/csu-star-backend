@@ -12,8 +12,16 @@ import (
 type AuditAction string
 
 const (
-	AuditActionCreate             AuditAction = "create"
-	AuditActionUpdate             AuditAction = "update"
+	AuditActionCreate AuditAction = "create"
+	AuditActionUpdate AuditAction = "update"
+	// AuditActionApprove / Reject 仅用于「审核」语义：处理举报、采纳或拒绝纠错。
+	//
+	// 历史上 approve 被复用在了创建公告、编辑课程、回复反馈、建立关联、发送通知等
+	// 十余种正向写操作上，导致「approve + course」的真实含义是「管理员编辑了课程」，
+	// 审计日志因此无法读懂。现已全部改用 create / update / delete。
+	//
+	// 注意：audit_action 是 postgres 枚举类型，新增取值需要 ALTER TYPE 迁移，
+	// 且枚举值无法删除。若要再细分动作，请先评估迁移与部署顺序（代码先于迁移上线会写库失败）。
 	AuditActionApprove            AuditAction = "approve"
 	AuditActionReject             AuditAction = "reject"
 	AuditActionDelete             AuditAction = "delete"

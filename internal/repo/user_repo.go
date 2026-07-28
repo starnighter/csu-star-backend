@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 	"errors"
 	"strings"
 	"time"
@@ -50,7 +51,8 @@ func (r *userRepository) CreateUser(user *model.Users) error {
 }
 
 func (r *userRepository) RewardInviter(inviterID int64) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	var createdNotification *model.Notifications
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var inviter model.Users
 		if err := tx.Select("id, points, status").Where("id = ?", inviterID).First(&inviter).Error; err != nil {
 			return err
@@ -77,20 +79,32 @@ func (r *userRepository) RewardInviter(inviterID int64) error {
 			return err
 		}
 
-		return tx.Create(&model.Notifications{
+		notification := &model.Notifications{
 			UserID:    inviterID,
 			Type:      model.NotificationPointsChanged,
+			Category:  model.NotificationCategoryPoints,
+			Result:    model.NotificationResultInform,
 			Title:     "邀请奖励到账",
 			Content:   "你邀请的新用户已完成注册，获得 3 积分奖励。",
 			RelatedID: 0,
 			IsRead:    false,
 			IsGlobal:  false,
-		}).Error
+		}
+		if err := tx.Create(notification).Error; err != nil {
+			return err
+		}
+		createdNotification = notification
+		return nil
 	})
+	if err == nil && createdNotification != nil {
+		realtime.PublishNewNotification(createdNotification)
+	}
+	return err
 }
 
 func (r *userRepository) RewardInvitee(inviteeID int64) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	var createdNotification *model.Notifications
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var invitee model.Users
 		if err := tx.Select("id, points, status").Where("id = ?", inviteeID).First(&invitee).Error; err != nil {
 			return err
@@ -117,16 +131,27 @@ func (r *userRepository) RewardInvitee(inviteeID int64) error {
 			return err
 		}
 
-		return tx.Create(&model.Notifications{
+		notification := &model.Notifications{
 			UserID:    inviteeID,
 			Type:      model.NotificationPointsChanged,
+			Category:  model.NotificationCategoryPoints,
+			Result:    model.NotificationResultInform,
 			Title:     "邀请码奖励到账",
 			Content:   "你已使用邀请码完成注册，获得 3 积分奖励。",
 			RelatedID: 0,
 			IsRead:    false,
 			IsGlobal:  false,
-		}).Error
+		}
+		if err := tx.Create(notification).Error; err != nil {
+			return err
+		}
+		createdNotification = notification
+		return nil
 	})
+	if err == nil && createdNotification != nil {
+		realtime.PublishNewNotification(createdNotification)
+	}
+	return err
 }
 
 func (r *userRepository) UpdateEmailByID(userID int64, email string) error {

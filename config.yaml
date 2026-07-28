@@ -15,7 +15,7 @@ server:
     - "::1"
 
 database:
-  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star_db port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+  dsn: "host=localhost user=postgres password=your_postgres_password dbname=csu_star port=5432 sslmode=disable TimeZone=Asia/Shanghai"
   max_open_conns: 80
   max_idle_conns: 40
   conn_max_lifetime_min: 30
@@ -37,6 +37,9 @@ jwt:
 security:
   mode: "enforce"
   resource_rate_limit_enabled: false
+  # 用于加密落库的敏感配置（管理端配置的 SMTP 密码）。
+  # 留空时退回 jwt.secret。轮换此值会导致已加密的数据无法解密。
+  secret_key: ""
 
 snowflake:
   nodeID: 1
@@ -55,35 +58,44 @@ tencent:
     cdn_auth_ttl_seconds: 300
 
 mail:
+  # 邮件正文里的品牌信息，避免在模板里硬编码
+  brand:
+    app_name: "CSU Star"
+    login_url: "https://csustar.com/login/"
+  # 投递预算：必须让 total_budget_sec < server.write_timeout_sec，
+  # 否则整池故障时会把 HTTP 请求拖过写超时
+  delivery:
+    per_try_timeout_sec: 10
+    total_budget_sec: 20
+    max_attempts: 3
+  # 账号邮箱域名策略，改完 kill -HUP 即可生效
+  account_email:
+    policy: "allow_all"       # allow_all | allow_list
+    allowed_domains: []       # 仅 policy=allow_list 时生效
+    blocked_domains: []       # 任何 policy 下都生效，优先级高于 allowed_domains
   verification:
     subject: "CSU Star | 南极星邮箱验证码"
+    code_ttl_minutes: 10      # Redis 有效期与邮件文案的唯一真相源
     providers:
+      # tier 越小越优先，同一 tier 内轮询，整个 tier 全失败才降级。
+      # 生产环境应把云厂商中继放在 tier 0，消费级邮箱降到高 tier 作兜底。
       - name: "163-primary"
+        tier: 0
         host: "smtp.163.com"
         port: 465
+        tls_mode: "implicit"  # implicit(465) | starttls(25/587)
         username: "your_163_username"
         password: "your_163_smtp_password"
         from_email_addr: "your_163_username"
         from_name: "CSU Star"
       - name: "126-secondary"
+        tier: 0
         host: "smtp.126.com"
         port: 465
         username: "your_126_username"
         password: "your_126_smtp_password"
         from_email_addr: "your_126_username"
         from_name: "CSU Star"
-  imap:
-    host: "imap.qq.com"
-    port: 993
-    username: "your_foxmail_username"
-    password: "your_foxmail_password"
-  email_register:
-    enabled: true
-    poll_interval_sec: 1800
-    idle_refresh_sec: 600
-    allowed_suffix: "@csu.edu.cn"
-    min_password_len: 6
-    max_password_len: 128
 
 oauth:
   qq:

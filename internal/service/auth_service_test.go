@@ -1,7 +1,9 @@
 package service
 
 import (
+	"csu-star-backend/config"
 	"csu-star-backend/internal/constant"
+	"csu-star-backend/internal/emailpolicy"
 	"csu-star-backend/internal/model"
 	"csu-star-backend/pkg/utils"
 	"errors"
@@ -105,6 +107,9 @@ func (s *authInvitationRepositoryStub) ConsumeInvitation(code string, inviteeID 
 }
 
 func TestRegisterWithInviteCodeRewardsBothSides(t *testing.T) {
+	skipEmailCaptchaVerifiedCheck = true
+	t.Cleanup(func() { skipEmailCaptchaVerifiedCheck = false })
+
 	userRepo := &authUserRepositoryStub{
 		findUserByEmailErr: gorm.ErrRecordNotFound,
 	}
@@ -134,6 +139,9 @@ func TestRegisterWithInviteCodeRewardsBothSides(t *testing.T) {
 }
 
 func TestRegisterWithInvalidInviteCodeReturnsBusinessError(t *testing.T) {
+	skipEmailCaptchaVerifiedCheck = true
+	t.Cleanup(func() { skipEmailCaptchaVerifiedCheck = false })
+
 	userRepo := &authUserRepositoryStub{
 		findUserByEmailErr: gorm.ErrRecordNotFound,
 	}
@@ -147,36 +155,135 @@ func TestRegisterWithInvalidInviteCodeReturnsBusinessError(t *testing.T) {
 	}
 }
 
-func TestBindEmailRequiresCampusSuffix(t *testing.T) {
+func TestRegisterRequiresEmailCaptchaVerified(t *testing.T) {
+	// 不跳过证明、也无 Redis 写入：必须拒绝直接注册
+	skipEmailCaptchaVerifiedCheck = false
 	userRepo := &authUserRepositoryStub{
-		findUserByID: &model.Users{ID: 1001},
+		findUserByEmailErr: gorm.ErrRecordNotFound,
 	}
 	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
 
-	err := service.BindEmail(1001, "test@example.com")
-	if !errors.Is(err, &constant.InvalidSchoolEmailErr) {
-		t.Fatalf("expected invalid school email error, got %v", err)
+	err := service.Register("newuser@qq.com", "password123", "tester", "", "")
+	if !errors.Is(err, &constant.EmailCaptchaRequiredErr) {
+		t.Fatalf("expected EmailCaptchaRequiredErr, got %v", err)
 	}
-	if userRepo.updateEmailCalled {
-		t.Fatal("expected email not to be updated for invalid school email")
+	if userRepo.createdUser != nil {
+		t.Fatal("expected no user created without captcha proof")
 	}
 }
 
-func TestBindEmailNormalizesCampusEmail(t *testing.T) {
+func TestBindEmailRejectsMalformedEmail(t *testing.T) {
 	userRepo := &authUserRepositoryStub{
 		findUserByID: &model.Users{ID: 1001},
 	}
 	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
 
-	err := service.BindEmail(1001, "  TEST@CSU.EDU.CN ")
+	err := service.BindEmail(1001, "not-an-email")
+	if !errors.Is(err, &constant.InvalidEmailFormatErr) {
+		t.Fatalf("expected invalid email format error, got %v", err)
+	}
+	if userRepo.updateEmailCalled {
+		t.Fatal("expected email not to be updated for malformed email")
+	}
+}
+
+// 域名策略默认放开，只有显式配成 allow_list 才会拒绝。
+func TestBindEmailRejectsDisallowedDomain(t *testing.T) {
+	config.SetConfig(&config.Config{
+		Mail: config.MailConfig{
+			AccountEmail: config.AccountEmailConfig{
+				Policy:         emailpolicy.ModeAllowList,
+				AllowedDomains: []string{"csu.edu.cn"},
+			},
+		},
+	})
+	t.Cleanup(func() { config.SetConfig(nil) })
+
+	userRepo := &authUserRepositoryStub{
+		findUserByID: &model.Users{ID: 1001},
+	}
+	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+	err := service.BindEmail(1001, "test@qq.com")
+	if !errors.Is(err, &constant.EmailDomainNotAllowedErr) {
+		t.Fatalf("expected domain not allowed error, got %v", err)
+	}
+	if userRepo.updateEmailCalled {
+		t.Fatal("expected email not to be updated for disallowed domain")
+	}
+}
+
+// 域名收紧只影响创建/绑定路径；登录必须仍然放行，
+// 否则改一次配置就会把存量用户锁在自己的账号外面。
+func TestLoginIgnoresDomainPolicy(t *testing.T) {
+	config.SetConfig(&config.Config{
+		Mail: config.MailConfig{
+			AccountEmail: config.AccountEmailConfig{
+				Policy:         emailpolicy.ModeAllowList,
+				AllowedDomains: []string{"csu.edu.cn"},
+			},
+		},
+	})
+	t.Cleanup(func() { config.SetConfig(nil) })
+
+	password := "password123"
+	hash, err := utils.HashPassword(password)
 	if err != nil {
-		t.Fatalf("BindEmail() error = %v", err)
+		t.Fatalf("HashPassword() error = %v", err)
 	}
-	if !userRepo.updateEmailCalled {
-		t.Fatal("expected email update to be called")
+	userRepo := &authUserRepositoryStub{
+		findUserByEmail: &model.Users{
+			ID:       1001,
+			Email:    stringPtr("legacy@qq.com"),
+			Password: hash,
+			Status:   model.UserStatusActive,
+		},
 	}
-	if userRepo.updateEmailValue != "test@csu.edu.cn" {
-		t.Fatalf("expected normalized school email, got %s", userRepo.updateEmailValue)
+	service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+	if _, _, _, err := service.Login("legacy@qq.com", password); err != nil {
+		t.Fatalf("expected login to succeed despite allow-list, got %v", err)
+	}
+}
+
+func TestBindEmailNormalizesEmail(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"  TEST@CSU.EDU.CN ", "test@csu.edu.cn"},
+		{"  User@QQ.Com ", "user@qq.com"},
+	}
+
+	for _, tc := range cases {
+		userRepo := &authUserRepositoryStub{
+			findUserByID: &model.Users{ID: 1001},
+		}
+		service := NewAuthService(userRepo, &authInvitationRepositoryStub{})
+
+		if err := service.BindEmail(1001, tc.in); err != nil {
+			t.Fatalf("BindEmail(%q) error = %v", tc.in, err)
+		}
+		if !userRepo.updateEmailCalled {
+			t.Fatalf("BindEmail(%q): expected email update to be called", tc.in)
+		}
+		if userRepo.updateEmailValue != tc.want {
+			t.Fatalf("BindEmail(%q) = %s, want %s", tc.in, userRepo.updateEmailValue, tc.want)
+		}
+	}
+}
+
+func TestCaptchaIDDistinguishesDomains(t *testing.T) {
+	// 旧方案把邮箱去掉 @csu.edu.cn 当 key，12345@qq.com 不匹配后缀会原样返回，
+	// 与校园邮箱的 12345 行为不一致。哈希方案必须对两者给出不同且定长的 key。
+	campus := captchaID("12345@csu.edu.cn")
+	qq := captchaID("12345@qq.com")
+
+	if campus == qq {
+		t.Fatal("expected different captcha ids for different domains")
+	}
+	if len(campus) != 32 || len(qq) != 32 {
+		t.Fatalf("expected 32-char ids, got %d and %d", len(campus), len(qq))
+	}
+	if campus != captchaID("12345@csu.edu.cn") {
+		t.Fatal("expected captchaID to be deterministic")
 	}
 }
 

@@ -1,8 +1,29 @@
 package req
 
+const (
+	// DefaultPageSize / MaxPageSize 必须与 service.fillPagination 的取值一致。
+	// 之前校验允许 size<=100 而 fillPagination 静默截到 50，客户端要了 100 只拿到 50 行，
+	// 却按 total 算出错误的页数。现在校验与截断对齐，超限直接 400 而不是静默截断。
+	DefaultPageSize = 10
+	MaxPageSize     = 50
+)
+
+// NormalizePagination 在 handler 里先行归一化，使返回体能回显服务端真正采用的 page/size。
+func NormalizePagination(page, size *int) {
+	if *page <= 0 {
+		*page = 1
+	}
+	if *size <= 0 {
+		*size = DefaultPageSize
+	}
+	if *size > MaxPageSize {
+		*size = MaxPageSize
+	}
+}
+
 type AdminPaginationReq struct {
 	Page int `form:"page" binding:"omitempty,min=1"`
-	Size int `form:"size" binding:"omitempty,min=1,max=100"`
+	Size int `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminStatisticsReq struct{}
@@ -10,7 +31,7 @@ type AdminStatisticsReq struct{}
 type AdminReportListReq struct {
 	Status string `form:"status" binding:"omitempty,oneof=pending resolved dismissed"`
 	Page   int    `form:"page" binding:"omitempty,min=1"`
-	Size   int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size   int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminReportHandleReq struct {
@@ -21,7 +42,7 @@ type AdminReportHandleReq struct {
 type AdminCorrectionListReq struct {
 	Status string `form:"status" binding:"omitempty,oneof=pending accepted rejected"`
 	Page   int    `form:"page" binding:"omitempty,min=1"`
-	Size   int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size   int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminCorrectionHandleReq struct {
@@ -32,7 +53,7 @@ type AdminCorrectionHandleReq struct {
 type AdminFeedbackListReq struct {
 	Status string `form:"status" binding:"omitempty,oneof=pending processing resolved closed"`
 	Page   int    `form:"page" binding:"omitempty,min=1"`
-	Size   int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size   int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminFeedbackReplyReq struct {
@@ -45,7 +66,7 @@ type AdminUserListReq struct {
 	Role    string `form:"role" binding:"omitempty,oneof=user auditor admin"`
 	Keyword string `form:"keyword" binding:"omitempty,max=128"`
 	Page    int    `form:"page" binding:"omitempty,min=1"`
-	Size    int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size    int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminUserCreateReq struct {
@@ -79,7 +100,7 @@ type AdminUserNotificationReq struct {
 
 type AdminAnnouncementListReq struct {
 	Page int `form:"page" binding:"omitempty,min=1"`
-	Size int `form:"size" binding:"omitempty,min=1,max=100"`
+	Size int `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminAnnouncementInput struct {
@@ -97,7 +118,7 @@ type AdminCourseListReq struct {
 	CourseType string `form:"course_type" binding:"omitempty,oneof=public non_public"`
 	Keyword    string `form:"keyword" binding:"omitempty,max=128"`
 	Page       int    `form:"page" binding:"omitempty,min=1"`
-	Size       int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size       int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminCourseInput struct {
@@ -123,7 +144,7 @@ type AdminTeacherListReq struct {
 	DepartmentID *int16 `form:"department_id" binding:"omitempty,min=1"`
 	Keyword      string `form:"keyword" binding:"omitempty,max=128"`
 	Page         int    `form:"page" binding:"omitempty,min=1"`
-	Size         int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size         int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminTeacherInput struct {
@@ -156,7 +177,7 @@ type AdminResourceListReq struct {
 	CourseID     int64  `form:"course_id" binding:"omitempty,min=1"`
 	ResourceType string `form:"resource_type" binding:"omitempty,max=64"`
 	Page         int    `form:"page" binding:"omitempty,min=1"`
-	Size         int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size         int    `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 type AdminAuditLogListReq struct {
@@ -164,5 +185,5 @@ type AdminAuditLogListReq struct {
 	OperatorID int64  `form:"operator_id" binding:"omitempty,min=1"`
 	TargetType string `form:"target_type" binding:"omitempty,max=64"`
 	Page       int    `form:"page" binding:"omitempty,min=1"`
-	Size       int    `form:"size" binding:"omitempty,min=1,max=100"`
+	Size       int    `form:"size" binding:"omitempty,min=1,max=50"`
 }

@@ -1,19 +1,10 @@
-package utils
+package mailer
 
-import (
-	"crypto/tls"
-	"csu-star-backend/config"
-	"csu-star-backend/logger"
-	"errors"
-	"fmt"
-	"net"
-	"net/smtp"
-	"strings"
-	"sync/atomic"
-	"time"
-
-	"go.uber.org/zap"
-)
+// 验证码邮件的 HTML 模板。占位符由 renderVerificationEmailHTML 替换：
+// {{code}} 验证码、{{ttl_minutes}} 有效期分钟数、{{login_url}} CTA 链接、{{app_name}} 品牌名。
+//
+// 有效期分钟数刻意不写死：历史上这里写「5 分钟」而 Redis 实际存 10 分钟，
+// 两边各写各的必然再次漂移。现在统一由 mail.verification.code_ttl_minutes 提供。
 
 const verificationEmailHTMLTemplate = `<html lang="zh-CN">
   <head>
@@ -21,7 +12,7 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
     <meta/>
     <meta/>
 
-    <title>CSU STAR | 验证码</title>
+    <title>{{app_name}} | 验证码</title>
     <style type="text/css">
       @media only screen and (max-width: 600px) {
         .mobile-padding {
@@ -158,7 +149,7 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
               </td>
               <td style="padding-left: 12px">
                 <div style="color: #4a4a4a; font-size: 13px; line-height: 1.6">
-                  验证码有效期为<strong style="color: #2563eb"> 5 </strong>
+                  验证码有效期为<strong style="color: #2563eb"> {{ttl_minutes}} </strong>
                   分钟，请尽快使用。
                 </div>
               </td>
@@ -167,7 +158,7 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
         </div>
 
         <div style="text-align: center; margin: 0 auto 30px auto">
-          <a href="https://csustar.com/login/" class="mobile-cta" style="
+          <a href="{{login_url}}" class="mobile-cta" style="
               display: inline-block;
               background: linear-gradient(135deg, #2563eb, #93c5fd);
               color: #fff;
@@ -257,211 +248,3 @@ const verificationEmailHTMLTemplate = `<html lang="zh-CN">
     </div>
   </body>
 </html>`
-
-type verificationEmailSender func(to []string, captcha string) error
-
-const verificationEmailSMTPTimeout = 10 * time.Second
-
-var sendVerificationEmailWithFallbackFn = sendVerificationEmailWithFallback
-var smtpVerificationEmailSender = sendVerificationEmailViaSMTP
-var verificationEmailProviderCursor atomic.Uint64
-
-func SendVerificationEmail(to []string, captcha string) error {
-	return sendVerificationEmailWithFallbackFn(to, captcha)
-}
-
-func HasVerificationEmailFallbackProvider() bool {
-	if config.GetConfig() == nil {
-		return false
-	}
-
-	return len(verificationSMTPProviders()) > 0
-}
-
-func sendVerificationEmailWithFallback(to []string, captcha string) error {
-	providers := verificationSMTPProviders()
-	if len(providers) == 0 {
-		return errors.New("no smtp providers configured")
-	}
-
-	start := int(verificationEmailProviderCursor.Add(1)-1) % len(providers)
-
-	var errs []error
-	for offset := range providers {
-		provider := providers[(start+offset)%len(providers)]
-		if err := smtpVerificationEmailSender(provider, to, captcha); err != nil {
-			if logger.Log != nil {
-				logger.Log.Warn(
-					"验证码邮件发送失败，尝试下一个SMTP通道",
-					zap.String("provider", providerDisplayName(provider)),
-					zap.String("from", provider.FromEmailAddr),
-					zap.Error(err),
-				)
-			}
-			errs = append(errs, fmt.Errorf("%s: %w", providerDisplayName(provider), err))
-			continue
-		}
-
-		if logger.Log != nil {
-			logger.Log.Info(
-				"验证码邮件发送成功",
-				zap.String("provider", providerDisplayName(provider)),
-				zap.String("from", provider.FromEmailAddr),
-				zap.Strings("to", to),
-			)
-		}
-		return nil
-	}
-
-	joinedErr := errors.Join(errs...)
-	if logger.Log != nil {
-		logger.Log.Error("验证码邮件所有通道均发送失败", zap.Strings("to", to), zap.Error(joinedErr))
-	}
-	return joinedErr
-}
-
-func sendVerificationEmailViaSMTP(cfg config.SMTPConfig, to []string, captcha string) error {
-	if !isCompleteSMTPConfig(cfg) {
-		return errors.New("smtp config is incomplete")
-	}
-
-	subject := strings.TrimSpace(config.GetConfig().Mail.Verification.Subject)
-	if subject == "" {
-		subject = defaultVerificationEmailSubject()
-	}
-
-	body := renderVerificationEmailHTML(captcha)
-	message := buildHTMLMessage(cfg.FromName, cfg.FromEmailAddr, to, subject, body)
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-
-	auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
-	return sendMailUsingTLS(addr, auth, cfg.FromEmailAddr, to, message)
-}
-
-func renderVerificationEmailHTML(captcha string) string {
-	return strings.ReplaceAll(verificationEmailHTMLTemplate, "{{code}}", captcha)
-}
-
-func buildHTMLMessage(fromName, fromEmail string, to []string, subject, body string) []byte {
-	headers := map[string]string{
-		"From":         formatMailAddress(fromName, fromEmail),
-		"To":           strings.Join(to, ","),
-		"Subject":      subject,
-		"MIME-Version": "1.0",
-		"Content-Type": "text/html; charset=UTF-8",
-	}
-
-	var builder strings.Builder
-	for _, key := range []string{"From", "To", "Subject", "MIME-Version", "Content-Type"} {
-		builder.WriteString(fmt.Sprintf("%s: %s\r\n", key, headers[key]))
-	}
-	builder.WriteString("\r\n")
-	builder.WriteString(body)
-	return []byte(builder.String())
-}
-
-func formatMailAddress(name, email string) string {
-	trimmedName := strings.TrimSpace(name)
-	if trimmedName == "" {
-		return email
-	}
-	return fmt.Sprintf("%s <%s>", trimmedName, email)
-}
-
-func isCompleteSMTPConfig(cfg config.SMTPConfig) bool {
-	return strings.TrimSpace(cfg.Host) != "" &&
-		cfg.Port != 0 &&
-		strings.TrimSpace(cfg.Username) != "" &&
-		strings.TrimSpace(cfg.Password) != "" &&
-		strings.TrimSpace(cfg.FromEmailAddr) != ""
-}
-
-func verificationSMTPProviders() []config.SMTPConfig {
-	if config.GetConfig() == nil {
-		return nil
-	}
-
-	providers := make([]config.SMTPConfig, 0, len(config.GetConfig().Mail.Verification.Providers))
-	for _, provider := range config.GetConfig().Mail.Verification.Providers {
-		if !isCompleteSMTPConfig(provider) {
-			continue
-		}
-		providers = append(providers, provider)
-	}
-	return providers
-}
-
-func providerDisplayName(cfg config.SMTPConfig) string {
-	if name := strings.TrimSpace(cfg.Name); name != "" {
-		return name
-	}
-	if from := strings.TrimSpace(cfg.FromEmailAddr); from != "" {
-		return from
-	}
-	return cfg.Host
-}
-
-func defaultVerificationEmailSubject() string {
-	return "CSU Star | 南极星邮箱验证码"
-}
-
-func dialSMTPOverTLS(addr string) (*smtp.Client, error) {
-	dialer := &net.Dialer{Timeout: verificationEmailSMTPTimeout}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{MinVersion: tls.VersionTLS12})
-	if err != nil {
-		return nil, err
-	}
-	_ = conn.SetDeadline(time.Now().Add(verificationEmailSMTPTimeout))
-
-	host, _, splitErr := net.SplitHostPort(addr)
-	if splitErr != nil {
-		_ = conn.Close()
-		return nil, splitErr
-	}
-
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-
-	return client, nil
-}
-
-func sendMailUsingTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte) (err error) {
-	client, err := dialSMTPOverTLS(addr)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	if auth != nil {
-		if ok, _ := client.Extension("AUTH"); ok {
-			if err = client.Auth(auth); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err = client.Mail(from); err != nil {
-		return err
-	}
-	for _, recipient := range to {
-		if err = client.Rcpt(recipient); err != nil {
-			return err
-		}
-	}
-
-	writer, err := client.Data()
-	if err != nil {
-		return err
-	}
-	if _, err = writer.Write(msg); err != nil {
-		return err
-	}
-	if err = writer.Close(); err != nil {
-		return err
-	}
-
-	return client.Quit()
-}

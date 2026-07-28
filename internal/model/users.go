@@ -96,8 +96,14 @@ func (o *OauthProvider) Scan(src interface{}) error {
 }
 
 type Users struct {
-	ID                int64          `gorm:"primary_key;autoIncrement:false" json:"id,string"`
-	Email             *string        `gorm:"type:varchar(255);default:null" json:"email"`
+	ID    int64   `gorm:"primary_key;autoIncrement:false" json:"id,string"`
+	Email *string `gorm:"type:varchar(255);default:null" json:"email"`
+	// StudentID 是学号。邮箱域名放开后它不再能从邮箱前缀推导，必须独立成列。
+	// 目前只由启动迁移从存量校园邮箱回填，没有任何写接口——绑定流程是后续独立一步。
+	// student_id != nil 即表示「已验证学号」，不需要额外的布尔标记。
+	StudentID *string `gorm:"type:varchar(32);default:null" json:"student_id,omitempty"`
+	// StudentIDSource: campus_email(回填) | manual | sso。
+	StudentIDSource   string         `gorm:"type:varchar(16);default:''" json:"student_id_source,omitempty"`
 	Password          string         `gorm:"type:varchar(255)" json:"password"`
 	Nickname          string         `gorm:"type:varchar(64)" json:"nickname"`
 	AvatarUrl         string         `gorm:"type:varchar(500)" json:"avatar_url"`

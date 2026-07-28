@@ -7,24 +7,28 @@ import (
 
 const (
 	// redis key 前缀
-	BlackListPrefix             = "blacklist:"
-	InviteCodePrefix            = "invite:"
-	CaptchaPrefix               = "captcha:"
-	CaptchaRepeatPrefix         = "captcha:repeat:"
-	RateLimitPrefix             = "ratelimit:"
-	AbusePrefix                 = "abuse:"
-	CacheRandomCoursesPrefix    = "random:courses:"
-	CacheRandomTeachersPrefix   = "random:teachers:"
+	BlackListPrefix  = "blacklist:"
+	InviteCodePrefix = "invite:"
+	// captcha key 从「学号」改成邮箱哈希后升版，避免部署瞬间的在途验证码
+	// 落在语义已变的旧 key 上。旧 key 10 分钟内自然过期。
+	CaptchaPrefix                = "captcha:v2:"
+	CaptchaRepeatPrefix          = "captcha:repeat:v2:"
+	// CaptchaVerifiedPrefix：/auth/email/verify 成功后写入，Register 消费。
+	// 防止前端两步流程里只调 register 跳过邮箱持有证明。
+	CaptchaVerifiedPrefix        = "captcha:verified:v2:"
+	RateLimitPrefix              = "ratelimit:"
+	AbusePrefix                  = "abuse:"
+	CacheRandomCoursesPrefix     = "random:courses:"
+	CacheRandomTeachersPrefix    = "random:teachers:"
 	ResourceUploadSessionPrefix = "resource:upload:session:"
-	EmailRegisterRateLimitPrefix = "email_register:ratelimit:"
 
 	// 腾讯云相关常量
 	TencentCosAvatarsKeyPrefix          = "avatars/"
 	TencentCosResourcesKeyPrefix        = "resources/"
 	TencentCosPendingResourcesKeyPrefix = "resources/pending/"
+	TencentCosWikiImagesKeyPrefix       = "wiki/images/"
 
 	// 其他常量
-	SchoolEmailSuffix  = "@csu.edu.cn"
 	GinUserID          = "user_id"
 	GinUserRole        = "user_role"
 	GinAccessTokenHash = "access_token_hash"
@@ -61,11 +65,14 @@ var (
 	UserBannedErr                       = errs.BusinessErr{Code: 1016, Msg: "用户已被封禁，无法登录"}
 	NotRefreshTokenErr                  = errs.BusinessErr{Code: 1017, Msg: "传入的token不是refresh_token，请重新传入"}
 	UserHasRegisteredErr                = errs.BusinessErr{Code: 1018, Msg: "用户已注册，请登录"}
-	InvalidSchoolEmailErr               = errs.BusinessErr{Code: 1019, Msg: "仅支持绑定校园邮箱"}
+	EmailDomainNotAllowedErr            = errs.BusinessErr{Code: 1019, Msg: "该邮箱暂不支持，请更换其他邮箱"}
 	TooManyRequestsErr                  = errs.BusinessErr{Code: 1020, Msg: "请求过于频繁，请稍后再试"}
 	UserAutoBannedErr                   = errs.BusinessErr{Code: 1021, Msg: "账号因异常行为已被系统限制"}
 	OauthHasBeenBoundErr                = errs.BusinessErr{Code: 1022, Msg: "该第三方账号已绑定其他账号，请先使用原账号登录或先解绑"}
-	EmailNotVerifiedUploadErr           = errs.BusinessErr{Code: 1023, Msg: "未邮箱认证用户无法上传资源"}
+	// 1023 曾是「未邮箱认证用户无法上传资源」，邮箱域名放开后该门槛已取消，
+	// 错误码保留不复用，避免与老客户端语义冲突。
+	InvalidEmailFormatErr      = errs.BusinessErr{Code: 1024, Msg: "邮箱格式不正确，请检查后重试"}
+	EmailCaptchaRequiredErr    = errs.BusinessErr{Code: 1025, Msg: "请先完成邮箱验证码校验"}
 
 	// 学院相关错误
 	QueryDepartmentsFailedErr = errs.BusinessErr{Code: 2001, Msg: "查询学院列表失败"}

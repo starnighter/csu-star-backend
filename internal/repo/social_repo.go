@@ -2,6 +2,7 @@ package repo
 
 import (
 	"csu-star-backend/internal/model"
+	"csu-star-backend/internal/realtime"
 
 	"gorm.io/gorm"
 )
@@ -54,7 +55,7 @@ func (r *socialRepository) DeleteLike(userID int64, targetType model.LikeTargetT
 }
 
 func (r *socialRepository) CreateLikeWithEffects(like *model.Likes, recipientID int64, notification *model.Notifications) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(like).Error; err != nil {
 			return err
 		}
@@ -79,6 +80,10 @@ func (r *socialRepository) CreateLikeWithEffects(like *model.Likes, recipientID 
 		}
 		return nil
 	})
+	if err == nil && notification != nil && notification.ID != 0 {
+		realtime.PublishNewNotification(notification)
+	}
+	return err
 }
 
 func (r *socialRepository) DeleteLikeWithEffects(userID int64, targetType model.LikeTargetType, targetID int64) error {
@@ -221,7 +226,11 @@ func (r *socialRepository) UpdateCommentLikeCount(commentID int64, delta int) er
 }
 
 func (r *socialRepository) CreateNotification(notification *model.Notifications) error {
-	return r.db.Create(notification).Error
+	if err := r.db.Create(notification).Error; err != nil {
+		return err
+	}
+	realtime.PublishNewNotification(notification)
+	return nil
 }
 
 func (r *socialRepository) GetLikeNotificationRecipient(targetType model.LikeTargetType, targetID int64) (int64, error) {
