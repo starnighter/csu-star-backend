@@ -4,6 +4,7 @@ import (
 	"csu-star-backend/internal/docengine"
 	"csu-star-backend/internal/model"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 )
@@ -270,6 +271,29 @@ func buildTree(pages []model.CompassPage, forceRootID int64) []docengine.TreeNod
 		}
 		byParent[*p.ParentID] = append(byParent[*p.ParentID], p)
 	}
+
+	// Stable sibling order: sort_order ASC, wiki_doc before wiki_cat, then id.
+	sortPages := func(list []model.CompassPage) {
+		sort.SliceStable(list, func(i, j int) bool {
+			a, b := list[i], list[j]
+			if a.SortOrder != b.SortOrder {
+				return a.SortOrder < b.SortOrder
+			}
+			// Prefer document pages over empty category folders when sort ties
+			// (legacy data: 简介 and 计算机学院 both had sort_order=10).
+			aDoc := externalKeyPref(a.ExternalKey)
+			bDoc := externalKeyPref(b.ExternalKey)
+			if aDoc != bDoc {
+				return aDoc < bDoc
+			}
+			return a.ID < b.ID
+		})
+	}
+	sortPages(roots)
+	for pid := range byParent {
+		sortPages(byParent[pid])
+	}
+
 	var walk func(p model.CompassPage) docengine.TreeNode
 	walk = func(p model.CompassPage) docengine.TreeNode {
 		n := docengine.TreeNode{ID: p.ID, Title: p.Title, ParentID: p.ParentID}
@@ -283,6 +307,21 @@ func buildTree(pages []model.CompassPage, forceRootID int64) []docengine.TreeNod
 		out = append(out, walk(r))
 	}
 	return out
+}
+
+// externalKeyPref ranks wiki_doc:* (0) before wiki_cat:* (1) before other (2).
+func externalKeyPref(ek *string) int {
+	if ek == nil {
+		return 2
+	}
+	switch {
+	case strings.HasPrefix(*ek, "wiki_doc:"):
+		return 0
+	case strings.HasPrefix(*ek, "wiki_cat:"):
+		return 1
+	default:
+		return 2
+	}
 }
 
 func (s *CompassService) ListHistory(userID, pageID int64) ([]model.CompassPageHistory, error) {
