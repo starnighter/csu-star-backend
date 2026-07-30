@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,16 +47,18 @@ func NewWikiService(db *gorm.DB, r repo.WikiRepository) *WikiService {
 // ---------- 公开读 ----------
 
 type WikiTreeDoc struct {
-	ID    int64  `json:"id,string"`
-	Slug  string `json:"slug"`
-	Title string `json:"title"`
+	ID        int64  `json:"id,string"`
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	SortOrder int    `json:"sort_order"`
 }
 
 type WikiTreeCategory struct {
-	ID       int64         `json:"id,string"`
-	Name     string        `json:"name"`
-	DocCount int           `json:"doc_count"`
-	Docs     []WikiTreeDoc `json:"docs"`
+	ID        int64         `json:"id,string"`
+	Name      string        `json:"name"`
+	SortOrder int           `json:"sort_order"`
+	DocCount  int           `json:"doc_count"`
+	Docs      []WikiTreeDoc `json:"docs"`
 }
 
 type WikiTreeSection struct {
@@ -151,12 +154,26 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 		docsByCategory[c.ID] = []WikiTreeDoc{}
 	}
 	for _, d := range docs {
-		node := WikiTreeDoc{ID: d.ID, Slug: d.Slug, Title: d.Title}
+		node := WikiTreeDoc{
+			ID:        d.ID,
+			Slug:      d.Slug,
+			Title:     d.Title,
+			SortOrder: d.SortOrder,
+		}
+		// 简介类文档强制为板块根，避免误挂学院后被学院顶到侧栏最前
+		if isWikiTreeRootIntro(d.Title, d.Slug) {
+			node.SortOrder = 0
+			if sec, ok := sectionIndex[d.Section]; ok {
+				sec.Docs = append(sec.Docs, node)
+			}
+			continue
+		}
 		if d.CategoryID != nil {
 			if list, ok := docsByCategory[*d.CategoryID]; ok {
 				docsByCategory[*d.CategoryID] = append(list, node)
 				continue
 			}
+			// 分类已删或不可见：降级为板块根文档，避免从侧栏消失/错位
 		}
 		if sec, ok := sectionIndex[d.Section]; ok {
 			sec.Docs = append(sec.Docs, node)
@@ -170,15 +187,29 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 		}
 		catDocs := docsByCategory[c.ID]
 		sec.Categories = append(sec.Categories, WikiTreeCategory{
-			ID:       c.ID,
-			Name:     c.Name,
-			DocCount: len(catDocs),
-			Docs:     catDocs,
+			ID:        c.ID,
+			Name:      c.Name,
+			SortOrder: c.SortOrder,
+			DocCount:  len(catDocs),
+			Docs:      catDocs,
 		})
 	}
 
 	for i := range sections {
 		sec := &sections[i]
+		// 根文档：简介优先，再按 sort_order
+		sort.SliceStable(sec.Docs, func(a, b int) bool {
+			da, db := sec.Docs[a], sec.Docs[b]
+			aIntro := isWikiTreeRootIntro(da.Title, da.Slug)
+			bIntro := isWikiTreeRootIntro(db.Title, db.Slug)
+			if aIntro != bIntro {
+				return aIntro
+			}
+			if da.SortOrder != db.SortOrder {
+				return da.SortOrder < db.SortOrder
+			}
+			return da.ID < db.ID
+		})
 		catDocs := 0
 		for _, cat := range sec.Categories {
 			catDocs += cat.DocCount
@@ -188,6 +219,18 @@ func (s *WikiService) buildTree() (*WikiTree, error) {
 	}
 
 	return &WikiTree{Sections: sections}, nil
+}
+
+func isWikiTreeRootIntro(title, slug string) bool {
+	switch title {
+	case "简介", "专业简介", "专业指北简介", "指南简介":
+		return true
+	}
+	switch slug {
+	case "index", "简介", "intro":
+		return true
+	}
+	return false
 }
 
 // ListSectionMetas 管理端 / 前端需要的板块注册表。

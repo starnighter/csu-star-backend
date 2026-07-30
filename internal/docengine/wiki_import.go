@@ -23,6 +23,19 @@ var wikiSectionToCompass = map[string]struct {
 func wikiCatKey(id int64) string { return fmt.Sprintf("wiki_cat:%d", id) }
 func wikiDocKey(id int64) string { return fmt.Sprintf("wiki_doc:%d", id) }
 
+// isWikiRootIntro identifies space-level intro docs that must rank before college folders.
+func isWikiRootIntro(title, slug string) bool {
+	switch title {
+	case "简介", "专业简介", "专业指北简介", "指南简介":
+		return true
+	}
+	switch slug {
+	case "index", "简介", "intro":
+		return true
+	}
+	return false
+}
+
 // RepairAndImportPublishedWiki removes the broken first-generation import
 // (pages that reused wiki row IDs and cross-linked majors → guides), then
 // re-imports with stable external_key mapping and fresh snowflake page IDs.
@@ -75,6 +88,10 @@ func purgeBrokenWikiImport(db *gorm.DB) error {
 	return nil
 }
 
+// compassCategorySortBase keeps wiki category folders after space-level root
+// docs (e.g. 「简介」). Same sort_order on cat+intro previously put 计算机学院 first.
+const compassCategorySortBase = 100_000
+
 // ImportPublishedWiki copies published wiki_documents (+ category folders) into
 // compass_pages. Uses external_key for idempotency; never reuses wiki row IDs
 // as compass page primary keys.
@@ -103,7 +120,8 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 			ContentType: mapping.CType,
 			Title:       c.Name,
 			Body:        "",
-			SortOrder:   c.SortOrder,
+			// Folders always sort after root docs in the same space.
+			SortOrder:   compassCategorySortBase + c.SortOrder,
 			PublishedAt: time.Now(),
 		})
 		if err != nil {
@@ -131,6 +149,11 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 				parentID = &pid
 			}
 		}
+		// Root intro docs must stay at the top of the space tree.
+		docSort := d.SortOrder
+		if d.CategoryID == nil && isWikiRootIntro(d.Title, d.Slug) {
+			docSort = 0
+		}
 		published := time.Now()
 		if d.PublishedAt != nil {
 			published = *d.PublishedAt
@@ -143,7 +166,7 @@ func ImportPublishedWiki(db *gorm.DB) (imported int, err error) {
 			ContentType: mapping.CType,
 			Title:       d.Title,
 			Body:        d.Content,
-			SortOrder:   d.SortOrder,
+			SortOrder:   docSort,
 			PublishedAt: published,
 		}); err != nil {
 			return imported, err
